@@ -1,0 +1,80 @@
+{
+  "urn": "urn:mediator:openmrs-advapacs-fhir",
+  "version": "0.1.0",
+  "name": "OpenMRS-AdvaPACS FHIR Mediator",
+  "description": "Routes radiology ServiceRequests from OpenMRS to AdvaPACS and delivers AdvaPACS FHIR Subscription results (ImagingStudy / DiagnosticReport) back into OpenMRS.",
+  "endpoints": [
+    {
+      "name": "Order push endpoint",
+      "host": "0.0.0.0",
+      "port": "3500",
+      "primary": true,
+      "type": "http",
+      "path": "/fhir/ServiceRequest"
+    },
+    {
+      "name": "AdvaPACS subscription webhook",
+      "host": "0.0.0.0",
+      "port": "3500",
+      "type": "http",
+      "path": "/webhooks/advapacs"
+    }
+  ],
+  "defaultChannelConfig": [
+    {
+      "name": "OpenMRS to AdvaPACS order push",
+      "urlPattern": "^/fhir/ServiceRequest$",
+      "routes": [
+        {
+          "name": "OpenMRS-AdvaPACS FHIR Mediator route",
+          "host": "openmrs-advapacs-mediator",
+          "port": 3500,
+          "primary": true,
+          "type": "http"
+        }
+      ],
+      "allow": ["openmrs"],
+      "methods": ["POST"],
+      "type": "http"
+    },
+    {
+      "name": "AdvaPACS result webhook",
+      "urlPattern": "^/webhooks/advapacs$",
+      "routes": [
+        {
+          "name": "OpenMRS-AdvaPACS FHIR Mediator route",
+          "host": "openmrs-advapacs-mediator",
+          "port": 3500,
+          "primary": true,
+          "type": "http"
+        }
+      ],
+      "allow": ["advapacs"],
+      "methods": ["POST"],
+      "type": "http"
+    }
+  ],
+  "configDefs": [
+    {
+      "param": "openmrsBaseUrl",
+      "displayName": "OpenMRS FHIR base URL",
+      "description": "e.g. https://cerca.pih.org/openmrs/ws/fhir2/R4",
+      "type": "string",
+      "defaultValue": "https://example.org/openmrs/ws/fhir2/R4"
+    },
+    {
+      "param": "advapacsBaseUrl",
+      "displayName": "AdvaPACS FHIR base URL",
+      "description": "e.g. https://usa1.api.integration.advapacs.com/fhir",
+      "type": "string",
+      "defaultValue": "https://example.api.integration.advapacs.com/fhir"
+    },
+    {
+      "param": "logLevel",
+      "displayName": "Log level",
+      "type": "option",
+      "values": ["debug", "info", "warn", "error"],
+      "defaultValue": "info"
+    }
+  ]
+}
