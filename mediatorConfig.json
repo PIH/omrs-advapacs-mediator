@@ -5,7 +5,7 @@
   "description": "Routes radiology ServiceRequests from OpenMRS to AdvaPACS and delivers AdvaPACS FHIR Subscription results (ImagingStudy / DiagnosticReport) back into OpenMRS.",
   "endpoints": [
     {
-      "name": "Order push endpoint",
+      "name": "Order Push endpoint",
       "host": "0.0.0.0",
       "port": "3500",
       "primary": true,
@@ -22,7 +22,7 @@
   ],
   "defaultChannelConfig": [
     {
-      "name": "OpenMRS to AdvaPACS order push",
+      "name": "OpenMRS to Mediator Order Push",
       "urlPattern": "^/fhir/ServiceRequest$",
       "routes": [
         {
@@ -39,7 +39,7 @@
       "type": "http"
     },
     {
-      "name": "Mediator to AdvaPACS order push",
+      "name": "Mediator to AdvaPACS Order Push",
       "urlPattern": "^/advapacs/.*$",
       "routes": [
         {
@@ -82,7 +82,7 @@
     {
       "param": "openmrsBaseUrl",
       "displayName": "OpenMRS FHIR base URL",
-      "description": "e.g. https://cerca.pih.org/openmrs/ws/fhir2/R4",
+      "description": "e.g. https://example.org/openmrs/ws/fhir2/R4",
       "type": "string",
       "defaultValue": "https://example.org/openmrs/ws/fhir2/R4"
     },
