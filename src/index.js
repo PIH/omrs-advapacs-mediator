@@ -1,7 +1,7 @@
 require('dotenv').config();
 const express = require('express');
 const bodyParser = express.json;
-const medUtils = require('openhim-mediator-utils');
+const medUtils = require('openhim-mediator-utils').default;
 
 const logger = require('./lib/logger');
 const advapacs = require('./lib/advapacsClient');
@@ -15,7 +15,8 @@ const openhimConfig = {
   username: process.env.OPENHIM_USERNAME,
   password: process.env.OPENHIM_PASSWORD,
   apiURL: process.env.OPENHIM_API_URL,
-  trustSelfSigned: process.env.OPENHIM_TRUST_SELF_SIGNED === 'true'
+  trustSelfSigned: process.env.OPENHIM_TRUST_SELF_SIGNED === 'true',
+  urn: mediatorConfig.urn
 };
 
 function startServer() {
@@ -24,14 +25,14 @@ function startServer() {
 
   app.use('/', subscriptionWebhookRoute);
 
-  // ORDER_INGESTION_MODE picks how OpenMRS ServiceRequests reach us: 'push'
-  // (default) mounts the HTTP endpoint for OpenMRS/an event listener module
-  // to POST to; 'poll' instead has us pull from OpenMRS on an interval. Both
-  // funnel into the same lib/orderRelay.js logic -- see .env.example.
+  // routes/serviceRequest.js's POST /fhir/ServiceRequest is always mounted:
+  // in 'push' mode OpenMRS (or an event listener) hits it via OpenHIM's
+  // inbound channel directly; in 'poll' mode orderPoller.js hits the same
+  // endpoint the same way, on an interval -- see .env.example.
+  app.use('/', serviceRequestRoute);
+
   if (process.env.ORDER_INGESTION_MODE === 'poll') {
     orderPoller.start(Number(process.env.ORDER_POLL_INTERVAL_MS) || 60000);
-  } else {
-    app.use('/', serviceRequestRoute);
   }
 
   app.get('/health', (req, res) => res.status(200).json({ status: 'up' }));

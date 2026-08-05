@@ -1,6 +1,6 @@
+const axios = require('axios');
 const logger = require('./logger');
 const openmrs = require('./openmrsClient');
-const { relayServiceRequest } = require('./orderRelay');
 
 let lastPolledAt = null;
 let timer = null;
@@ -11,6 +11,11 @@ let timer = null;
  * Cursors on _lastUpdated rather than tracking processed ids, so a
  * mediator restart re-anchors to "now" and will not replay a backlog --
  * any ServiceRequest created while the mediator was down is missed.
+ *
+ * Submits each polled ServiceRequest to OpenHIM's inbound channel (same
+ * urlPattern routes/serviceRequest.js's push endpoint sits behind) rather
+ * than calling orderRelay.js directly, so this hop is logged/retryable as
+ * an OpenHIM transaction instead of being invisible in-process.
  */
 async function pollOnce() {
   const since = lastPolledAt;
@@ -18,16 +23,19 @@ async function pollOnce() {
 
   try {
     const bundle = await openmrs.searchServiceRequests({
-      status: 'active',
       lastUpdatedAfter: since
     });
     const serviceRequests = (bundle.entry || []).map((entry) => entry.resource);
 
     for (const serviceRequest of serviceRequests) {
       try {
-        await relayServiceRequest(serviceRequest);
+        await axios.post(
+          `${process.env.OPENHIM_ROUTER_URL}/fhir/ServiceRequest`,
+          serviceRequest,
+          { headers: { 'Content-Type': 'application/fhir+json' } }
+        );
       } catch (err) {
-        logger.error('Failed to relay polled ServiceRequest to AdvaPACS', {
+        logger.error('Failed to submit polled ServiceRequest to OpenHIM', {
           openmrsServiceRequestId: serviceRequest.id,
           error: err.message
         });

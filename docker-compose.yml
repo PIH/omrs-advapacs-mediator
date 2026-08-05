@@ -1,0 +1,111 @@
+networks:
+  openhim:
+
+services:
+  mongo-db:
+    container_name: mongo-db
+    image: mongo:4.0
+    networks:
+      - openhim
+    volumes:
+      - "mongo-data:/data/db"
+    restart: unless-stopped
+
+  openhim-core:
+    container_name: openhim-core
+    image: jembi/openhim-core:latest
+    restart: unless-stopped
+    environment:
+      - mongo_url=mongodb://mongo-db/openhim-development
+      - mongo_atnaUrl=mongodb://mongo-db/openhim-development
+      - NODE_ENV=development
+      - api_authenticationTypes=["token", "basic", "openid", "local"]
+      - authentication_enableCustomTokenAuthentication=true
+      - authentication_enableJWTAuthentication=true
+      - authentication_jwt_secretOrPublicKey=secret
+      - authentication_jwt_algorithms=HS256
+      - authentication_jwt_issuer=openhim
+      - openhimConsoleBaseUrl=http://localhost:9000
+    ports:
+      - "8081:8080"
+      - "5000:5000"
+      - "5001:5001"
+    networks:
+      - openhim
+    healthcheck:
+      # The reference healthcheck this is modeled on used curl, which this
+      # image doesn't have (confirmed via `docker exec ... which curl` ->
+      # not found, so that healthcheck always reported unhealthy). wget is
+      # present instead.
+      test: "wget --no-check-certificate -qO- https://openhim-core:8080/heartbeat || exit 1"
+      interval: 30s
+      timeout: 30s
+      retries: 3
+
+  openhim-console:
+    container_name: openhim-console
+    image: jembi/openhim-console:latest
+    restart: unless-stopped
+    environment:
+      - OPENHIM_MEDIATOR_API_PORT=8081
+    networks:
+      - openhim
+    ports:
+      - "9000:80"
+    healthcheck:
+      test: "wget -qO- http://openhim-console || exit 1"
+      interval: 30s
+      timeout: 30s
+      retries: 3
+
+  openmrs-advapacs-mediator:
+    container_name: openmrs-advapacs-mediator
+    build: .
+    restart: unless-stopped
+    depends_on:
+      - openhim-core
+    networks:
+      - openhim
+    extra_hosts:
+      # Lets this container reach OpenMRS running on the host machine.
+      - "host.docker.internal:host-gateway"
+    environment:
+      # Topology: hardcoded to the compose network, not read from .env.
+      - OPENHIM_API_URL=https://openhim-core:8080
+      - OPENHIM_TRUST_SELF_SIGNED=true
+      - OPENHIM_ROUTER_URL=http://openhim-core:5001
+      - OPENMRS_BASE_URL=http://host.docker.internal:8080/openmrs
+      - ADVAPACS_CHANNEL_URL=http://openhim-core:5001/advapacs
+      - MEDIATOR_PORT=3500
+      - MEDIATOR_STANDALONE=false
+      # Secrets/config: sourced from this repo's own .env (gitignored) via
+      # compose's automatic ${VAR} substitution.
+      - OPENHIM_USERNAME=${OPENHIM_USERNAME}
+      - OPENHIM_PASSWORD=${OPENHIM_PASSWORD}
+      - LOG_LEVEL=${LOG_LEVEL}
+      - ORDER_INGESTION_MODE=${ORDER_INGESTION_MODE}
+      - ORDER_POLL_INTERVAL_MS=${ORDER_POLL_INTERVAL_MS}
+      - OPENMRS_FHIR_PATH=${OPENMRS_FHIR_PATH}
+      - OPENMRS_USERNAME=${OPENMRS_USERNAME}
+      - OPENMRS_PASSWORD=${OPENMRS_PASSWORD}
+      - ADVAPACS_BASE_URL=${ADVAPACS_BASE_URL}
+      - ADVAPACS_CLIENT_ID=${ADVAPACS_CLIENT_ID}
+      - ADVAPACS_CLIENT_SECRET=${ADVAPACS_CLIENT_SECRET}
+      - ADVAPACS_WEBHOOK_SECRET=${ADVAPACS_WEBHOOK_SECRET}
+
+  openhim-setup:
+    build: .
+    command: ["node", "scripts/setupOpenhim.js"]
+    restart: "no"
+    depends_on:
+      - openhim-core
+    networks:
+      - openhim
+    environment:
+      - OPENHIM_API_URL=https://openhim-core:8080
+      - OPENHIM_TRUST_SELF_SIGNED=true
+      - OPENHIM_USERNAME=${OPENHIM_USERNAME}
+      - OPENHIM_PASSWORD=${OPENHIM_PASSWORD}
+
+volumes:
+  mongo-data:

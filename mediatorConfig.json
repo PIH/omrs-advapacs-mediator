@@ -34,8 +34,32 @@
         }
       ],
       "allow": ["openmrs"],
+      "authType": "public",
       "methods": ["POST"],
       "type": "http"
+    },
+    {
+      "name": "Mediator to AdvaPACS order push",
+      "urlPattern": "^/advapacs/.*$",
+      "routes": [
+        {
+          "name": "AdvaPACS FHIR API",
+          "host": "example.api.integration.advapacs.com",
+          "port": 443,
+          "primary": true,
+          "type": "http",
+          "secured": true,
+          "pathTransform": "s/^\\/advapacs//"
+        }
+      ],
+      "allow": [],
+      "authType": "public",
+      "methods": ["POST"],
+      "type": "http",
+      "requestBody": true,
+      "autoRetryEnabled": true,
+      "autoRetryPeriodMinutes": 1,
+      "autoRetryMaxAttempts": 5
     },
     {
       "name": "AdvaPACS result webhook",

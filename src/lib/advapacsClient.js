@@ -2,7 +2,7 @@ const axios = require('axios');
 const logger = require('./logger');
 
 const client = axios.create({
-  baseURL: process.env.ADVAPACS_BASE_URL,
+  baseURL: process.env.ADVAPACS_CHANNEL_URL,
   headers: {
     'Content-Type': 'application/fhir+json',
     // AdvaPACS uses its own ID/Secret scheme rather than OAuth2 bearer tokens.
@@ -14,6 +14,12 @@ const client = axios.create({
  * Push a ServiceRequest (radiology order) into AdvaPACS. AdvaPACS creates
  * the corresponding worklist entry and returns the resource with its
  * own id, which we should store against the OpenMRS order for reconciliation.
+ *
+ * Goes through OpenHIM's outbound channel (ADVAPACS_CHANNEL_URL), which
+ * auto-retries connection failures/timeouts to the real AdvaPACS host (see
+ * scripts/setupOpenhim.js). It does NOT retry a 4xx/5xx *response* from
+ * AdvaPACS itself -- that surfaces here as a normal rejected promise, caught
+ * by callers (orderRelay.js's callers) with no further retry or alerting.
  */
 async function createServiceRequest(serviceRequest) {
   const { data } = await client.post('/ServiceRequest', serviceRequest);
