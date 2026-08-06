@@ -1,9 +1,8 @@
 jest.mock('axios');
 jest.mock('../../src/lib/logger', () => ({ info: jest.fn(), warn: jest.fn(), error: jest.fn() }));
 
-const axios = require('axios');
-
 describe('advapacsClient', () => {
+  let axios;
   let mockClient;
   let advapacs;
 
@@ -24,15 +23,12 @@ describe('advapacsClient', () => {
         }
       }
     };
-    // Re-require axios after resetModules to get the correct mock reference
-    const freshAxios = require('axios');
-    freshAxios.create.mockReturnValue(mockClient);
-    // Also set up axios.get mock
-    freshAxios.get.mockResolvedValue({ data: { resourceType: 'ImagingStudy', id: 'img1' } });
 
-    // Update the original axios variable to have the mock methods
-    axios.create = freshAxios.create;
-    axios.get = freshAxios.get;
+    // Re-require axios after resetModules to get the correct mock reference
+    axios = require('axios');
+    axios.create.mockReturnValue(mockClient);
+    // Also set up axios.get mock
+    axios.get.mockResolvedValue({ data: { resourceType: 'ImagingStudy', id: 'img1' } });
 
     advapacs = require('../../src/lib/advapacsClient');
   });

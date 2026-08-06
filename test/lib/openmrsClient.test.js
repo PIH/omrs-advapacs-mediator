@@ -11,7 +11,7 @@ describe('openmrsClient', () => {
     jest.clearAllMocks();
 
     process.env.OPENMRS_BASE_URL = 'http://localhost:8080/openmrs';
-    process.env.OPENMRS_FHIR_PATH = '/ws/fhir2/R4';
+    process.env.OPENMRS_FHIR_PATH = '/ws/fhir2/R5-test';
     process.env.OPENMRS_USERNAME = 'admin';
     process.env.OPENMRS_PASSWORD = 'Admin123';
 
@@ -26,7 +26,7 @@ describe('openmrsClient', () => {
 
   test('creates the axios client with OPENMRS_BASE_URL + OPENMRS_FHIR_PATH as baseURL and basic auth', () => {
     expect(axios.create).toHaveBeenCalledWith({
-      baseURL: 'http://localhost:8080/openmrs/ws/fhir2/R4',
+      baseURL: 'http://localhost:8080/openmrs/ws/fhir2/R5-test',
       auth: { username: 'admin', password: 'Admin123' },
       headers: { 'Content-Type': 'application/fhir+json' }
     });
