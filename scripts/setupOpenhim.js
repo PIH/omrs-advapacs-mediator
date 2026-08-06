@@ -12,6 +12,33 @@ const CHANNEL_NAMES = [
   'Mediator to AdvaPACS Order Push'
 ];
 
+const OUTBOUND_CHANNEL_NAME = 'Mediator to AdvaPACS Order Push';
+
+// OpenHIM channels can't read env vars themselves, so mediatorConfig.json's
+// route host is just a documentation placeholder (example.api.integration.advapacs.com).
+// This resolves the real destination from ADVAPACS_BASE_URL at setup time --
+// the one place that has to happen.
+function withRealAdvapacsRoute(channelDef) {
+  if (channelDef.name !== OUTBOUND_CHANNEL_NAME) return channelDef;
+
+  const advapacsUrl = new URL(process.env.ADVAPACS_BASE_URL);
+  const secured = advapacsUrl.protocol === 'https:';
+  const port = advapacsUrl.port ? Number(advapacsUrl.port) : (secured ? 443 : 80);
+  const basePath = advapacsUrl.pathname === '/' ? '' : advapacsUrl.pathname.replace(/\/$/, '');
+  const pathTransform = `s/^\\/advapacs/${basePath.replace(/\//g, '\\/')}/`;
+
+  return {
+    ...channelDef,
+    routes: channelDef.routes.map((route) => ({
+      ...route,
+      host: advapacsUrl.hostname,
+      port,
+      secured,
+      pathTransform
+    }))
+  };
+}
+
 const api = axios.create({
   baseURL: process.env.OPENHIM_API_URL,
   auth: {
@@ -63,7 +90,9 @@ async function upsertChannel(channelDef) {
 
 async function main() {
   await waitForOpenhim();
-  const channels = mediatorConfig.defaultChannelConfig.filter((c) => CHANNEL_NAMES.includes(c.name));
+  const channels = mediatorConfig.defaultChannelConfig
+    .filter((c) => CHANNEL_NAMES.includes(c.name))
+    .map(withRealAdvapacsRoute);
   for (const channel of channels) {
     await upsertChannel(channel);
   }

@@ -49,6 +49,7 @@
           "primary": true,
           "type": "http",
           "secured": true,
+          "forwardAuthHeader": true,
           "pathTransform": "s/^\\/advapacs//"
         }
       ],
