@@ -22,6 +22,22 @@ describe('orderRelay', () => {
     subject: { reference: 'Patient/omrs-patient-uuid' }
   };
 
+  const placerIdentifier = {
+    use: 'usual',
+    type: {
+      coding: [
+        { system: 'http://terminology.hl7.org/CodeSystem/v2-0203', code: 'PLAC', display: 'Placer Identifier' }
+      ]
+    },
+    value: 'ORD-1'
+  };
+
+  const unrelatedIdentifier = {
+    use: 'official',
+    system: 'http://example.org/internal-id',
+    value: 'INTERNAL-1'
+  };
+
   beforeEach(() => {
     jest.resetModules();
     jest.clearAllMocks();
@@ -128,6 +144,82 @@ describe('orderRelay', () => {
     expect(result).toEqual({
       serviceRequest: serviceRequestWithSubject,
       created: { id: 'advapacs-sr-1' }
+    });
+  });
+
+  describe('accession number stamping (temporary, UHM-9437/9439/9440)', () => {
+    test('stamps the placer identifier with the radiology order number system', async () => {
+      openmrs.getPatient.mockResolvedValue(patientWithEmrId);
+      advapacs.createPatient.mockResolvedValue({ id: 'advapacs-patient-1' });
+      advapacs.createServiceRequest.mockResolvedValue({ id: 'advapacs-sr-1' });
+
+      await orderRelay.relayServiceRequest({
+        ...serviceRequestWithSubject,
+        identifier: [placerIdentifier]
+      });
+
+      const [outboundArg] = advapacs.createServiceRequest.mock.calls[0];
+      expect(outboundArg.identifier).toContainEqual({
+        ...placerIdentifier,
+        system: 'http://www.pih.org/identifiers/lesotho/radiology-order-number'
+      });
+    });
+
+    test('adds a separate accession-number identifier carrying the same value', async () => {
+      openmrs.getPatient.mockResolvedValue(patientWithEmrId);
+      advapacs.createPatient.mockResolvedValue({ id: 'advapacs-patient-1' });
+      advapacs.createServiceRequest.mockResolvedValue({ id: 'advapacs-sr-1' });
+
+      await orderRelay.relayServiceRequest({
+        ...serviceRequestWithSubject,
+        identifier: [placerIdentifier]
+      });
+
+      const [outboundArg] = advapacs.createServiceRequest.mock.calls[0];
+      expect(outboundArg.identifier).toContainEqual({
+        system: 'http://www.pih.org/identifiers/lesotho/radiology-accession-number',
+        value: 'ORD-1'
+      });
+    });
+
+    test('leaves an unrelated identifier unchanged and only appends one new entry', async () => {
+      openmrs.getPatient.mockResolvedValue(patientWithEmrId);
+      advapacs.createPatient.mockResolvedValue({ id: 'advapacs-patient-1' });
+      advapacs.createServiceRequest.mockResolvedValue({ id: 'advapacs-sr-1' });
+
+      await orderRelay.relayServiceRequest({
+        ...serviceRequestWithSubject,
+        identifier: [placerIdentifier, unrelatedIdentifier]
+      });
+
+      const [outboundArg] = advapacs.createServiceRequest.mock.calls[0];
+      expect(outboundArg.identifier).toContainEqual(unrelatedIdentifier);
+      expect(outboundArg.identifier).toHaveLength(3);
+    });
+
+    test('leaves identifiers unchanged and adds nothing when there is no placer identifier', async () => {
+      openmrs.getPatient.mockResolvedValue(patientWithEmrId);
+      advapacs.createPatient.mockResolvedValue({ id: 'advapacs-patient-1' });
+      advapacs.createServiceRequest.mockResolvedValue({ id: 'advapacs-sr-1' });
+
+      await orderRelay.relayServiceRequest({
+        ...serviceRequestWithSubject,
+        identifier: [unrelatedIdentifier]
+      });
+
+      const [outboundArg] = advapacs.createServiceRequest.mock.calls[0];
+      expect(outboundArg.identifier).toEqual([unrelatedIdentifier]);
+    });
+
+    test('does not throw and produces an empty identifier array when the input has no identifier field at all', async () => {
+      openmrs.getPatient.mockResolvedValue(patientWithEmrId);
+      advapacs.createPatient.mockResolvedValue({ id: 'advapacs-patient-1' });
+      advapacs.createServiceRequest.mockResolvedValue({ id: 'advapacs-sr-1' });
+
+      await orderRelay.relayServiceRequest(serviceRequestWithSubject);
+
+      const [outboundArg] = advapacs.createServiceRequest.mock.calls[0];
+      expect(outboundArg.identifier).toEqual([]);
     });
   });
 });

@@ -4,6 +4,13 @@ const advapacs = require('./advapacsClient');
 
 const PATIENT_IDENTIFIER_SYSTEM = process.env.PATIENT_IDENTIFIER_SYSTEM;
 
+// TODO(UHM-9437, UHM-9439, UHM-9440): temporary workaround until OpenMRS
+// itself generates a proper radiology order number / accession number.
+// Once those tickets land, this identifier-stamping/duplication logic
+// should be removed.
+const PLACER_ORDER_NUMBER_SYSTEM = 'http://www.pih.org/identifiers/lesotho/radiology-order-number';
+const ACCESSION_NUMBER_SYSTEM = 'http://www.pih.org/identifiers/lesotho/radiology-accession-number';
+
 /**
  * Core order-relay logic, independent of how the ServiceRequest arrived
  * (HTTP push from routes/serviceRequest.js, or a scheduled poll from
@@ -44,6 +51,7 @@ async function relayServiceRequest(input) {
 
   const outboundServiceRequest = {
     ...serviceRequest,
+    identifier: withAccessionNumber(serviceRequest.identifier),
     subject: outboundSubject
   };
 
@@ -59,6 +67,19 @@ async function relayServiceRequest(input) {
   });
 
   return { serviceRequest, created };
+}
+
+function withAccessionNumber(identifiers = []) {
+  const stamped = identifiers.map((identifier) => {
+    const isPlacer = identifier.type && identifier.type.coding &&
+      identifier.type.coding.some((coding) => coding.code === 'PLAC');
+    return isPlacer ? { ...identifier, system: PLACER_ORDER_NUMBER_SYSTEM } : identifier;
+  });
+
+  const placer = stamped.find((identifier) => identifier.system === PLACER_ORDER_NUMBER_SYSTEM);
+  return placer
+    ? [...stamped, { system: ACCESSION_NUMBER_SYSTEM, value: placer.value }]
+    : stamped;
 }
 
 function patientNameOf(patient) {
