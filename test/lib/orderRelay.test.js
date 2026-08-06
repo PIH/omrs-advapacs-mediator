@@ -222,4 +222,34 @@ describe('orderRelay', () => {
       expect(outboundArg.identifier).toEqual([]);
     });
   });
+
+  describe('completed -> active status override (hack)', () => {
+    test('overrides a completed status to active', async () => {
+      openmrs.getPatient.mockResolvedValue(patientWithEmrId);
+      advapacs.createPatient.mockResolvedValue({ id: 'advapacs-patient-1' });
+      advapacs.createServiceRequest.mockResolvedValue({ id: 'advapacs-sr-1' });
+
+      await orderRelay.relayServiceRequest({
+        ...serviceRequestWithSubject,
+        status: 'completed'
+      });
+
+      const [outboundArg] = advapacs.createServiceRequest.mock.calls[0];
+      expect(outboundArg.status).toBe('active');
+    });
+
+    test('leaves any other status unchanged', async () => {
+      openmrs.getPatient.mockResolvedValue(patientWithEmrId);
+      advapacs.createPatient.mockResolvedValue({ id: 'advapacs-patient-1' });
+      advapacs.createServiceRequest.mockResolvedValue({ id: 'advapacs-sr-1' });
+
+      await orderRelay.relayServiceRequest({
+        ...serviceRequestWithSubject,
+        status: 'cancelled'
+      });
+
+      const [outboundArg] = advapacs.createServiceRequest.mock.calls[0];
+      expect(outboundArg.status).toBe('cancelled');
+    });
+  });
 });

@@ -49,10 +49,21 @@ async function relayServiceRequest(input) {
     };
   }
 
+  // HACK: OpenMRS ServiceRequests are arriving here already marked "completed"
+  // (this mediator can't filter orderPoller.js's search by status server-side --
+  // this OpenMRS FHIR2 module doesn't support a status search param on
+  // ServiceRequest at all). AdvaPACS needs "active" to treat the order as
+  // actionable and create a worklist entry, so we force completed -> active
+  // here. Any other status (cancelled, on-hold, etc.) passes through
+  // unchanged. Remove this once OpenMRS-side order status handling is fixed
+  // upstream so orders reach us with their real status.
+  const outboundStatus = serviceRequest.status === 'completed' ? 'active' : serviceRequest.status;
+
   const outboundServiceRequest = {
     ...serviceRequest,
     identifier: withAccessionNumber(serviceRequest.identifier),
-    subject: outboundSubject
+    subject: outboundSubject,
+    status: outboundStatus
   };
 
   const created = await advapacs.createServiceRequest(outboundServiceRequest);
