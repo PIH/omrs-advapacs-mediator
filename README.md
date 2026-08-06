@@ -169,6 +169,21 @@ to run `node scripts/setupOpenhim.js` yourself (once) to create the two
 order-push channels, and make sure `OPENHIM_ROUTER_URL`/`ADVAPACS_CHANNEL_URL`
 in `.env` point at wherever that OpenHIM instance's router actually is.
 
+## Running tests
+
+```bash
+npm install
+npm test
+```
+
+Unit tests only — every HTTP call (to OpenMRS, AdvaPACS/OpenHIM's outbound
+channel) is mocked with Jest, so nothing needs to be running: no Docker, no
+OpenHIM, no OpenMRS. Covers `orderRelay.js`, `advapacsClient.js`,
+`openmrsClient.js`, `orderPoller.js`, and `routes/serviceRequest.js`. Does
+**not** cover `src/index.js`'s route-mounting/ingestion-mode logic (no
+testable seam without a refactor) or `subscriptionWebhook.js` — see
+`docs/superpowers/specs/2026-08-06-test-suite-design.md` for why.
+
 ## Files
 
 ```
