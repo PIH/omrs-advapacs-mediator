@@ -10,18 +10,25 @@ orders and results between them as FHIR resources.
    `ORDER_INGESTION_MODE` (see `.env.example`):
    - **`push`** (default): something on the OpenMRS side POSTs it (or its id)
      to `POST /fhir/ServiceRequest` on this mediator (`src/routes/serviceRequest.js`),
-     via OpenHIM's "OpenMRS to AdvaPACS order push" inbound channel.
+     via OpenHIM's "OpenMRS to Mediator Order Push" inbound channel.
    - **`poll`**: `src/lib/orderPoller.js` periodically searches OpenMRS's FHIR
      `ServiceRequest` endpoint for anything new since the last poll, then POSTs
      each one to that same OpenHIM inbound channel — it no longer calls the
      relay logic in-process, so this hop is logged (and retryable) as a real
      OpenHIM transaction instead of being invisible.
 3. Either way, `routes/serviceRequest.js` hands off to `src/lib/orderRelay.js`,
-   which resolves the patient and remaps references, then
-   `src/lib/advapacsClient.js` pushes the resource to AdvaPACS's FHIR API —
-   but through a second, **outbound** OpenHIM channel ("Mediator to AdvaPACS
-   order push", `^/advapacs/.*$`) rather than calling AdvaPACS directly, so
-   that leg is logged and auto-retried by OpenHIM too (see Known limitations).
+   which resolves the OpenMRS `Patient` and, before touching the
+   `ServiceRequest` at all, pushes that `Patient` to AdvaPACS first
+   (`advapacsClient.js`'s `createPatient`) — if that fails, the
+   `ServiceRequest` is never sent (fail-fast: AdvaPACS needs the patient
+   record to exist before it can match an order to it). Only then does
+   `orderRelay.js` remap the `ServiceRequest.subject` to a **logical FHIR
+   reference** — `{ identifier: { system: PATIENT_IDENTIFIER_SYSTEM, value }
+   }` — instead of an OpenMRS-internal UUID, and `advapacsClient.js` pushes
+   the `ServiceRequest` itself. Both pushes go through a second, **outbound**
+   OpenHIM channel ("Mediator to AdvaPACS Order Push", `^/advapacs/.*$`)
+   rather than calling AdvaPACS directly, so each leg is logged and
+   auto-retried by OpenHIM (see Known limitations).
 4. AdvaPACS performs/reads the study, then fires its own FHIR `Subscription`
    (rest-hook) at `POST /webhooks/advapacs` on this mediator, carrying an
    `ImagingStudy` or `DiagnosticReport`. (This leg is *not* routed through an
@@ -33,8 +40,10 @@ orders and results between them as FHIR resources.
 orderPoller.js (every ORDER_POLL_INTERVAL_MS)
   --HTTP POST--> OpenHIM inbound channel  ^/fhir/ServiceRequest$
     --routes to--> mediator's POST /fhir/ServiceRequest (routes/serviceRequest.js)
-      --calls--> orderRelay.js (resolve patient, remap subject)
-        --calls--> advapacsClient.js createServiceRequest()
+      --calls--> orderRelay.js (resolve patient)
+        --calls--> advapacsClient.js createPatient()          [1: Patient, first]
+          --HTTP POST--> OpenHIM outbound channel  ^/advapacs/.*$  (auto-retry enabled)
+        --calls--> advapacsClient.js createServiceRequest()   [2: ServiceRequest, only if #1 succeeded]
           --HTTP POST--> OpenHIM outbound channel  ^/advapacs/.*$  (auto-retry enabled)
             --pathTransform strips /advapacs, routes to--> real AdvaPACS host
 ```
@@ -51,9 +60,12 @@ they need your actual data model, not boilerplate:
   log) mapping OpenMRS `ServiceRequest.id` ↔ AdvaPACS `ServiceRequest.id`, so
   the webhook handler can find the right OpenMRS order to update instead of
   relying on `DiagnosticReport.basedOn` alone.
-- **Patient/location identifier mapping**: confirm which identifier AdvaPACS
-  actually wants for worklist matching (MRN vs. OpenMRS UUID vs. an
-  accession-linked id) and substitute it in the outbound `ServiceRequest.subject`.
+- **Location/Practitioner identifier mapping**: the patient side of this is
+  resolved (`orderRelay.js` references the patient via the
+  `PATIENT_IDENTIFIER_SYSTEM` FHIR identifier, not an OpenMRS UUID — see
+  Flow), but `Location`/`Practitioner` references on the outbound
+  `ServiceRequest` still carry raw OpenMRS UUIDs. Confirm what AdvaPACS
+  expects for those and substitute it the same way.
 
 ## Known limitations
 
@@ -166,8 +178,8 @@ Dockerfile                  Mediator's own container image
 docker-compose.yml          Full local stack: mongo, openhim-core, openhim-console, mediator, one-shot channel setup
 src/index.js                Registration + server bootstrap; always mounts the push endpoint, additionally starts the poller in 'poll' mode
 src/lib/openmrsClient.js    OpenMRS FHIR2 client (read/search ServiceRequest/Patient, write results)
-src/lib/advapacsClient.js   Calls OpenHIM's outbound channel (ADVAPACS_CHANNEL_URL), not AdvaPACS directly
-src/lib/orderRelay.js       Shared order-relay logic used by both ingestion modes
+src/lib/advapacsClient.js   Calls OpenHIM's outbound channel (ADVAPACS_CHANNEL_URL), not AdvaPACS directly; createPatient + createServiceRequest
+src/lib/orderRelay.js       Shared order-relay logic: pushes Patient first, then remaps ServiceRequest.subject to a PATIENT_IDENTIFIER_SYSTEM identifier reference and pushes it
 src/lib/orderPoller.js      Poll-based ingestion (ORDER_INGESTION_MODE=poll) -- submits via OpenHIM's inbound channel
 src/routes/serviceRequest.js       Inbound channel's target; always mounted regardless of ingestion mode
 src/routes/subscriptionWebhook.js  Result webhook handler (not yet routed through OpenHIM -- see Known limitations)

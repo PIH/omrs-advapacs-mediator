@@ -2,6 +2,8 @@ const logger = require('./logger');
 const openmrs = require('./openmrsClient');
 const advapacs = require('./advapacsClient');
 
+const PATIENT_IDENTIFIER_SYSTEM = process.env.PATIENT_IDENTIFIER_SYSTEM;
+
 /**
  * Core order-relay logic, independent of how the ServiceRequest arrived
  * (HTTP push from routes/serviceRequest.js, or a scheduled poll from
@@ -17,16 +19,32 @@ async function relayServiceRequest(input) {
   const patientId = patientRef && patientRef.split('/').pop();
   const patient = patientId ? await openmrs.getPatient(patientId) : null;
 
-  // TODO: this is the piece that needs real mapping work -- AdvaPACS needs
-  // a patient identifier it can match against modality worklist entries,
-  // which may not be the raw OpenMRS Patient UUID. Confirm which
-  // identifier system AdvaPACS expects (MRN, accession-linked id, etc.)
-  // and substitute it here, along with Location/Practitioner references.
+  // TODO: Location/Practitioner references on the outbound ServiceRequest
+  // still carry raw OpenMRS UUIDs -- confirm what AdvaPACS expects for
+  // those too (the patient side is resolved below via PATIENT_IDENTIFIER_SYSTEM).
+  let outboundSubject = serviceRequest.subject;
+
+  if (patient) {
+    // Send the Patient first so AdvaPACS has a matching record before it
+    // needs to resolve the ServiceRequest's subject identifier reference.
+    await advapacs.createPatient(patient);
+
+    const emrIdentifier = (patient.identifier || []).find(
+      (identifier) => identifier.system === PATIENT_IDENTIFIER_SYSTEM
+    );
+    if (!emrIdentifier) {
+      throw new Error(`Patient ${patient.id} has no identifier for system ${PATIENT_IDENTIFIER_SYSTEM}`);
+    }
+
+    outboundSubject = {
+      identifier: { system: emrIdentifier.system, value: emrIdentifier.value },
+      display: patientNameOf(patient)
+    };
+  }
+
   const outboundServiceRequest = {
     ...serviceRequest,
-    subject: patient
-      ? { reference: `Patient/${patient.id}`, display: patientNameOf(patient) }
-      : serviceRequest.subject
+    subject: outboundSubject
   };
 
   const created = await advapacs.createServiceRequest(outboundServiceRequest);

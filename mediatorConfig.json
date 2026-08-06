@@ -99,6 +99,13 @@
       "type": "option",
       "values": ["debug", "info", "warn", "error"],
       "defaultValue": "info"
+    },
+    {
+      "param": "patientIdentifierSystem",
+      "displayName": "Patient identifier system",
+      "description": "FHIR identifier system used to reference the patient on outbound ServiceRequests, e.g. http://www.pih.org/identifiers/lesotho/emr-id",
+      "type": "string",
+      "defaultValue": "http://www.pih.org/identifiers/lesotho/emr-id"
     }
   ]
 }

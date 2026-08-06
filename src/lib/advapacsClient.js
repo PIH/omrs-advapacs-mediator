@@ -28,6 +28,17 @@ async function createServiceRequest(serviceRequest) {
 }
 
 /**
+ * Push a Patient into AdvaPACS ahead of the ServiceRequest that references
+ * it, so AdvaPACS has a matching patient record before it needs to resolve
+ * the ServiceRequest.subject identifier reference (see orderRelay.js).
+ */
+async function createPatient(patient) {
+  const { data } = await client.post('/Patient', patient);
+  logger.info('Pushed Patient to AdvaPACS', { advapacsId: data.id });
+  return data;
+}
+
+/**
  * Fetch a resource by absolute reference URL, used when a Subscription
  * notification arrives as a lightweight ping rather than a full resource
  * payload and we need to go fetch the ImagingStudy/DiagnosticReport ourselves.
@@ -60,4 +71,4 @@ async function ensureSubscription(webhookUrl, webhookSecret, criteria = 'Imaging
   return data;
 }
 
-module.exports = { createServiceRequest, getResourceByUrl, ensureSubscription };
+module.exports = { createServiceRequest, createPatient, getResourceByUrl, ensureSubscription };

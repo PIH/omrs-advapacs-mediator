@@ -8,8 +8,8 @@ const mediatorConfig = require('../mediatorConfig.json');
 // suggestion. This script actually creates/updates them via the admin API so
 // `docker compose up` produces a working setup, not just documentation.
 const CHANNEL_NAMES = [
-  'OpenMRS to AdvaPACS order push',
-  'Mediator to AdvaPACS order push'
+  'OpenMRS to Mediator Order Push',
+  'Mediator to AdvaPACS Order Push'
 ];
 
 const api = axios.create({
