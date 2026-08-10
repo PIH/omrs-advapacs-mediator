@@ -30,11 +30,27 @@ async function createServiceRequest(serviceRequest) {
 /**
  * Push a Patient into AdvaPACS ahead of the ServiceRequest that references
  * it, so AdvaPACS has a matching patient record before it needs to resolve
- * the ServiceRequest.subject identifier reference (see orderRelay.js).
+ * the ServiceRequest.subject reference (see orderRelay.js).
+ *
+ * AdvaPACS's FHIR server doesn't support conditional update (PUT to a
+ * search-qualified URL with no id) -- it 400s with HAPI-0418, insisting on
+ * an id in the URL path. So the search-then-decide is done here instead:
+ * search by identifierSystem|identifierValue, then PUT /Patient/{id} if
+ * AdvaPACS already has that patient, or POST /Patient (create) if not.
  */
-async function createPatient(patient) {
-  const { data } = await client.post('/Patient', patient);
-  logger.info('Pushed Patient to AdvaPACS', { advapacsId: data.id });
+async function upsertPatient(patient, identifierSystem, identifierValue) {
+  const { data: searchResults } = await client.get('/Patient', {
+    params: { identifier: `${identifierSystem}|${identifierValue}` }
+  });
+  const existingId = searchResults.total > 0 ? searchResults.entry[0].resource.id : undefined;
+
+  // FHIR update requires the body's id to match the URL's id (HAPI-0420
+  // otherwise) -- `patient` still carries its origin system's id, so it must
+  // be overwritten with AdvaPACS's own id here, not just addressed via URL.
+  const { data } = existingId
+    ? await client.put(`/Patient/${existingId}`, { ...patient, id: existingId })
+    : await client.post('/Patient', patient);
+  logger.info('Upserted Patient in AdvaPACS', { advapacsId: data.id });
   return data;
 }
 
@@ -71,4 +87,4 @@ async function ensureSubscription(webhookUrl, webhookSecret, criteria = 'Imaging
   return data;
 }
 
-module.exports = { createServiceRequest, createPatient, getResourceByUrl, ensureSubscription };
+module.exports = { createServiceRequest, upsertPatient, getResourceByUrl, ensureSubscription };

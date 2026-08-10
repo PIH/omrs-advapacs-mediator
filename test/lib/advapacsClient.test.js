@@ -15,7 +15,9 @@ describe('advapacsClient', () => {
     process.env.ADVAPACS_CLIENT_SECRET = 'test-secret';
 
     mockClient = {
+      get: jest.fn(),
       post: jest.fn(),
+      put: jest.fn(),
       defaults: {
         headers: {
           'Content-Type': 'application/fhir+json',
@@ -43,14 +45,34 @@ describe('advapacsClient', () => {
     });
   });
 
-  test('createPatient posts the patient to /Patient and returns response data', async () => {
+  test('upsertPatient searches by identifierSystem|identifierValue, then PUTs to /Patient/{id} with the AdvaPACS id substituted into the body, when a match is found', async () => {
     const patient = { resourceType: 'Patient', id: 'p1' };
-    mockClient.post.mockResolvedValue({ data: { resourceType: 'Patient', id: 'advapacs-p1' } });
+    mockClient.get.mockResolvedValue({
+      data: { resourceType: 'Bundle', total: 1, entry: [{ resource: { resourceType: 'Patient', id: 'advapacs-p1' } }] }
+    });
+    mockClient.put.mockResolvedValue({ data: { resourceType: 'Patient', id: 'advapacs-p1' } });
 
-    const result = await advapacs.createPatient(patient);
+    const result = await advapacs.upsertPatient(patient, 'http://www.pih.org/identifiers/lesotho/emr-id', 'CAAKH7');
 
-    expect(mockClient.post).toHaveBeenCalledWith('/Patient', patient);
+    expect(mockClient.get).toHaveBeenCalledWith('/Patient', {
+      params: { identifier: 'http://www.pih.org/identifiers/lesotho/emr-id|CAAKH7' }
+    });
+    expect(mockClient.put).toHaveBeenCalledWith('/Patient/advapacs-p1', { resourceType: 'Patient', id: 'advapacs-p1' });
     expect(result).toEqual({ resourceType: 'Patient', id: 'advapacs-p1' });
+  });
+
+  test('upsertPatient POSTs to /Patient (create) when the search finds no match', async () => {
+    const patient = { resourceType: 'Patient', id: 'p1' };
+    mockClient.get.mockResolvedValue({ data: { resourceType: 'Bundle', total: 0, entry: [] } });
+    mockClient.post.mockResolvedValue({ data: { resourceType: 'Patient', id: 'advapacs-new' } });
+
+    const result = await advapacs.upsertPatient(patient, 'http://www.pih.org/identifiers/lesotho/emr-id', 'CAAKH7');
+
+    expect(mockClient.get).toHaveBeenCalledWith('/Patient', {
+      params: { identifier: 'http://www.pih.org/identifiers/lesotho/emr-id|CAAKH7' }
+    });
+    expect(mockClient.post).toHaveBeenCalledWith('/Patient', patient);
+    expect(result).toEqual({ resourceType: 'Patient', id: 'advapacs-new' });
   });
 
   test('createServiceRequest posts the ServiceRequest to /ServiceRequest and returns response data', async () => {

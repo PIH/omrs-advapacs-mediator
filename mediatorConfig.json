@@ -55,7 +55,7 @@
       ],
       "allow": [],
       "authType": "public",
-      "methods": ["POST"],
+      "methods": ["GET", "POST", "PUT"],
       "type": "http",
       "requestBody": true,
       "autoRetryEnabled": true,
