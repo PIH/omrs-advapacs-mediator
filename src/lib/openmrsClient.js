@@ -30,6 +30,7 @@ async function getPatient(patientId) {
   return getResource('Patient', patientId);
 }
 
+// TODO: not yet tested
 /**
  * Write a result resource (DiagnosticReport or ImagingStudy) into OpenMRS.
  * OpenMRS FHIR2 module supports create via PUT-with-id or POST; POST is
@@ -41,6 +42,7 @@ async function createResource(resourceType, resource) {
   return data;
 }
 
+// TODO: not yet tested
 /**
  * Update the status of an existing ServiceRequest in OpenMRS, e.g. moving
  * it from "active" to "completed" once AdvaPACS reports the study is read.
@@ -52,6 +54,7 @@ async function updateServiceRequestStatus(serviceRequestId, status) {
   return data;
 }
 
+// TODO: not yet tested
 /**
  * Search for ServiceRequests, used by lib/orderPoller.js to find orders
  * created/updated since the last poll instead of waiting for a push.

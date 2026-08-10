@@ -13,7 +13,7 @@ const client = axios.create({
 /**
  * Push a ServiceRequest (radiology order) into AdvaPACS. AdvaPACS creates
  * the corresponding worklist entry and returns the resource with its
- * own id, which we should store against the OpenMRS order for reconciliation.
+ * own id, TODO: (should we?) store against the OpenMRS order for reconciliation.
  *
  * Goes through OpenHIM's outbound channel (ADVAPACS_CHANNEL_URL), which
  * auto-retries connection failures/timeouts to the real AdvaPACS host (see
@@ -64,6 +64,7 @@ async function getResourceByUrl(url) {
   return data;
 }
 
+// TODO: currently disabled, test
 /**
  * Register (or refresh) a FHIR Subscription with AdvaPACS so it will
  * rest-hook our webhook endpoint whenever an ImagingStudy or DiagnosticReport
