@@ -11,7 +11,7 @@ let timer = null;
  * Cursors on _lastUpdated rather than tracking processed ids, so a
  * mediator restart re-anchors to "now" and will not replay a backlog --
  * any ServiceRequest created while the mediator was down is missed.
- * TODO: this will need to be improved if we want to use in Production@!
+ * TODO: this will need to be improved if we want to use in Production!
  *
  * Submits each polled ServiceRequest to OpenHIM's inbound channel (same
  * urlPattern routes/serviceRequest.js's push endpoint sits behind) rather

@@ -149,17 +149,25 @@ describe('orderRelay', () => {
     expect(advapacs.createServiceRequest).not.toHaveBeenCalled();
   });
 
-  test('when the ServiceRequest has no subject reference, subject passes through unchanged and no Patient is pushed', async () => {
+  test('throws when the ServiceRequest has no subject reference, and never sends the ServiceRequest', async () => {
     const noSubjectServiceRequest = { resourceType: 'ServiceRequest', id: 'sr2' };
-    advapacs.createServiceRequest.mockResolvedValue({ id: 'advapacs-sr-2' });
 
-    await orderRelay.relayServiceRequest(noSubjectServiceRequest);
+    await expect(orderRelay.relayServiceRequest(noSubjectServiceRequest))
+      .rejects.toThrow('ServiceRequest sr2 references non-existent Patient undefined');
 
     expect(openmrs.getPatient).not.toHaveBeenCalled();
     expect(advapacs.upsertPatient).not.toHaveBeenCalled();
+    expect(advapacs.createServiceRequest).not.toHaveBeenCalled();
+  });
 
-    const [outboundArg] = advapacs.createServiceRequest.mock.calls[0];
-    expect(outboundArg.subject).toBeUndefined();
+  test('throws when the subject reference does not resolve to an existing Patient', async () => {
+    openmrs.getPatient.mockResolvedValue(null);
+
+    await expect(orderRelay.relayServiceRequest(serviceRequestWithSubject))
+      .rejects.toThrow('ServiceRequest sr1 references non-existent Patient omrs-patient-uuid');
+
+    expect(advapacs.upsertPatient).not.toHaveBeenCalled();
+    expect(advapacs.createServiceRequest).not.toHaveBeenCalled();
   });
 
   test('resolves with the serviceRequest and the AdvaPACS-created resource', async () => {
@@ -176,7 +184,7 @@ describe('orderRelay', () => {
   });
 
   describe('accession number stamping (temporary, UHM-9437/9439/9440)', () => {
-    test('drops the raw placer identifier from the outbound identifiers, keeping only the derived accession number', async () => {
+    test('stamps the placer identifier with the radiology order number system', async () => {
       openmrs.getPatient.mockResolvedValue(patientWithEmrId);
       advapacs.upsertPatient.mockResolvedValue({ id: 'advapacs-patient-1' });
       advapacs.createServiceRequest.mockResolvedValue({ id: 'advapacs-sr-1' });
@@ -187,12 +195,13 @@ describe('orderRelay', () => {
       });
 
       const [outboundArg] = advapacs.createServiceRequest.mock.calls[0];
-      expect(outboundArg.identifier).not.toContainEqual(expect.objectContaining({
+      expect(outboundArg.identifier).toContainEqual({
+        ...placerIdentifier,
         system: 'http://www.pih.org/identifiers/lesotho/radiology-order-number'
-      }));
+      });
     });
 
-    test('adds a separate accession-number identifier carrying the same value', async () => {
+    test('adds a separate accession-number identifier carrying the same value, alongside the placer identifier', async () => {
       openmrs.getPatient.mockResolvedValue(patientWithEmrId);
       advapacs.upsertPatient.mockResolvedValue({ id: 'advapacs-patient-1' });
       advapacs.createServiceRequest.mockResolvedValue({ id: 'advapacs-sr-1' });
@@ -203,7 +212,7 @@ describe('orderRelay', () => {
       });
 
       const [outboundArg] = advapacs.createServiceRequest.mock.calls[0];
-      expect(outboundArg.identifier).toEqual([{
+      expect(outboundArg.identifier).toContainEqual({
         system: 'http://www.pih.org/identifiers/lesotho/radiology-accession-number',
         value: 'ORD-1',
         type: {
@@ -211,7 +220,8 @@ describe('orderRelay', () => {
             { system: 'http://terminology.hl7.org/CodeSystem/v2-0203', code: 'ACSN' }
           ]
         }
-      }]);
+      });
+      expect(outboundArg.identifier).toHaveLength(2);
     });
 
     test('leaves an unrelated identifier unchanged and only appends the accession-number entry', async () => {
@@ -226,7 +236,7 @@ describe('orderRelay', () => {
 
       const [outboundArg] = advapacs.createServiceRequest.mock.calls[0];
       expect(outboundArg.identifier).toContainEqual(unrelatedIdentifier);
-      expect(outboundArg.identifier).toHaveLength(2);
+      expect(outboundArg.identifier).toHaveLength(3);
     });
 
     test('leaves identifiers unchanged and adds nothing when there is no placer identifier', async () => {
