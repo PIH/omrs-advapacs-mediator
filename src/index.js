@@ -4,12 +4,16 @@ const bodyParser = express.json;
 const medUtils = require('openhim-mediator-utils').default;
 
 const logger = require('./lib/logger');
-const advapacs = require('./lib/advapacsClient');
 const orderPoller = require('./lib/orderPoller');
 const mediatorConfig = require('../mediatorConfig.json');
 
 const serviceRequestRoute = require('./routes/serviceRequest');
-const subscriptionWebhookRoute = require('./routes/subscriptionWebhook');
+// DISABLED (for now): the AdvaPACS result-delivery path (routes/subscriptionWebhook.js
+// + advapacsClient.ensureSubscription below) hasn't been tested at all yet --
+// all effort so far has gone into the outbound order-push path. Commented out
+// rather than deleted so it's easy to re-enable once that path is ready to test.
+// const subscriptionWebhookRoute = require('./routes/subscriptionWebhook');
+// const advapacs = require('./lib/advapacsClient');
 
 const openhimConfig = {
   username: process.env.OPENHIM_USERNAME,
@@ -23,7 +27,8 @@ function startServer() {
   const app = express();
   app.use(bodyParser({ type: ['application/json', 'application/fhir+json'] }));
 
-  app.use('/', subscriptionWebhookRoute);
+  // DISABLED (for now) -- see the commented-out require above.
+  // app.use('/', subscriptionWebhookRoute);
 
   // routes/serviceRequest.js's POST /fhir/ServiceRequest is always mounted:
   // in 'push' mode OpenMRS (or an event listener) hits it via OpenHIM's
@@ -55,14 +60,18 @@ async function registerAndStart() {
 
     startServer();
 
+    // DISABLED (for now) -- see the commented-out require above. This was
+    // also the source of the "Could not confirm AdvaPACS subscription on
+    // startup" warning logged on every boot.
+    //
     // One-time setup: make sure AdvaPACS has a live Subscription pointed at
     // our webhook. Safe to leave in on every boot; AdvaPACS treats repeat
     // registration of an equivalent Subscription as idempotent-ish, but
     // consider gating this behind an explicit CLI flag in production.
-    const webhookUrl = `${process.env.OPENHIM_API_URL}/webhooks/advapacs`;
-    advapacs
-      .ensureSubscription(webhookUrl, process.env.ADVAPACS_WEBHOOK_SECRET, 'ImagingStudy')
-      .catch((e) => logger.warn('Could not confirm AdvaPACS subscription on startup', { error: e.message }));
+    // const webhookUrl = `${process.env.OPENHIM_API_URL}/webhooks/advapacs`;
+    // advapacs
+    //   .ensureSubscription(webhookUrl, process.env.ADVAPACS_WEBHOOK_SECRET, 'ImagingStudy')
+    //   .catch((e) => logger.warn('Could not confirm AdvaPACS subscription on startup', { error: e.message }));
   });
 }
 

@@ -11,13 +11,6 @@
       "primary": true,
       "type": "http",
       "path": "/fhir/ServiceRequest"
-    },
-    {
-      "name": "AdvaPACS subscription webhook",
-      "host": "0.0.0.0",
-      "port": "3500",
-      "type": "http",
-      "path": "/webhooks/advapacs"
     }
   ],
   "defaultChannelConfig": [
@@ -61,22 +54,6 @@
       "autoRetryEnabled": true,
       "autoRetryPeriodMinutes": 1,
       "autoRetryMaxAttempts": 5
-    },
-    {
-      "name": "AdvaPACS result webhook",
-      "urlPattern": "^/webhooks/advapacs$",
-      "routes": [
-        {
-          "name": "OpenMRS-AdvaPACS FHIR Mediator route",
-          "host": "openmrs-advapacs-mediator",
-          "port": 3500,
-          "primary": true,
-          "type": "http"
-        }
-      ],
-      "allow": ["advapacs"],
-      "methods": ["POST"],
-      "type": "http"
     }
   ],
   "configDefs": [

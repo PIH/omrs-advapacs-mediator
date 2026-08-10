@@ -5,6 +5,13 @@ const advapacs = require('../lib/advapacsClient');
 
 const router = express.Router();
 
+// PLACEHOLDER: not yet functional. Written but never exercised against a
+// real AdvaPACS webhook delivery -- all testing so far has gone into the
+// outbound order-push path. Not currently mounted in src/index.js and its
+// OpenHIM channel/endpoint entries have been removed from mediatorConfig.json
+// (both commented out with a matching note); wire it back up once this path
+// is ready to test.
+
 /**
  * AdvaPACS rest-hooks this endpoint per the Subscription registered via
  * advapacsClient.ensureSubscription(). The payload may be the full resource
