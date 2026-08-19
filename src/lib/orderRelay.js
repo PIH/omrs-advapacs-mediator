@@ -68,7 +68,7 @@ async function relayServiceRequest(input) {
   // this OpenMRS FHIR2 module doesn't support a status search param on
   // ServiceRequest at all). Any other status currently (cancelled, on-hold, etc.) passes
   // through unchanged. We will need to build support for different status
-  const outboundStatus = serviceRequest.status === 'completed' ? 'active' : serviceRequest.status;
+  const outboundStatus = serviceRequest.status === 'completed' ? 'draft' : serviceRequest.status;
 
   // strip out the OpenMRS-specific and OpenMRS Reference fields we don't want to send to AdvaPACS
   const { encounter, requester, occurrencePeriod, id, meta, text, ...serviceRequestWithoutStrippedFields } = serviceRequest;
