@@ -265,8 +265,8 @@ describe('orderRelay', () => {
     });
   });
 
-  describe('completed -> active status override (hack)', () => {
-    test('overrides a completed status to active', async () => {
+  describe('completed -> draft status override (hack)', () => {
+    test('overrides a completed status to draft', async () => {
       openmrs.getPatient.mockResolvedValue(patientWithEmrId);
       advapacs.upsertPatient.mockResolvedValue({ id: 'advapacs-patient-1' });
       advapacs.createServiceRequest.mockResolvedValue({ id: 'advapacs-sr-1' });
@@ -277,7 +277,7 @@ describe('orderRelay', () => {
       });
 
       const [outboundArg] = advapacs.createServiceRequest.mock.calls[0];
-      expect(outboundArg.status).toBe('active');
+      expect(outboundArg.status).toBe('draft');
     });
 
     test('leaves any other status unchanged', async () => {
