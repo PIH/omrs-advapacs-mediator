@@ -74,7 +74,6 @@ services:
       - OPENHIM_API_URL=https://openhim-core:8080
       - OPENHIM_TRUST_SELF_SIGNED=true
       - OPENHIM_ROUTER_URL=http://openhim-core:5001
-      - OPENMRS_BASE_URL=http://host.docker.internal:8080/openmrs
       - ADVAPACS_CHANNEL_URL=http://openhim-core:5001/advapacs
       - MEDIATOR_PORT=3500
       - MEDIATOR_STANDALONE=false
@@ -85,6 +84,11 @@ services:
       - LOG_LEVEL=${LOG_LEVEL}
       - ORDER_INGESTION_MODE=${ORDER_INGESTION_MODE}
       - ORDER_POLL_INTERVAL_MS=${ORDER_POLL_INTERVAL_MS}
+      # OPENMRS_BASE_URL is read from .env, not hardcoded here -- unlike the
+      # topology vars above, it varies by where OpenMRS actually runs. If
+      # OpenMRS is on this same host, .env needs host.docker.internal (not
+      # localhost, which inside this container means the container itself).
+      - OPENMRS_BASE_URL=${OPENMRS_BASE_URL}
       - OPENMRS_FHIR_PATH=${OPENMRS_FHIR_PATH}
       - OPENMRS_USERNAME=${OPENMRS_USERNAME}
       - OPENMRS_PASSWORD=${OPENMRS_PASSWORD}

@@ -157,9 +157,14 @@ the two order-push channels (channels aren't auto-created from mediator
 registration — that only happens if you explicitly run this script or import
 `mediatorConfig.json`'s `defaultChannelConfig` by hand).
 
-- The mediator container reaches OpenMRS on the host machine via
-  `host.docker.internal` (wired up with `extra_hosts` in `docker-compose.yml`
-  — Linux needs Docker Engine 20.10+ for the `host-gateway` special value).
+- `OPENMRS_BASE_URL` is read from `.env` here, same as elsewhere in the app —
+  it's not hardcoded to any particular OpenMRS location. If OpenMRS runs on
+  this same host, set it to `http://host.docker.internal:8080/openmrs`, not
+  `localhost` (inside the mediator's container, `localhost` means the
+  container itself). `host.docker.internal` is wired up via `extra_hosts` in
+  `docker-compose.yml` — Linux needs Docker Engine 20.10+ for the
+  `host-gateway` special value. If OpenMRS runs elsewhere, just point
+  `OPENMRS_BASE_URL` at its real address instead.
 - **First run on a fresh Mongo volume**: OpenHIM core auto-seeds a
   `root@openhim.org` user with its built-in default password
   `openhim-password` — not whatever you may have set via the console on a
@@ -181,6 +186,13 @@ npm start
 Skips OpenHIM entirely. In `poll` mode this means `orderPoller.js`'s POST to
 `OPENHIM_ROUTER_URL` will fail (nothing listening) — useful for exercising the
 OpenMRS-polling side in isolation, not the full relay.
+
+Since this runs directly on the host (not in a container), `OPENMRS_BASE_URL`
+needs a value reachable from the host itself — `http://localhost:8080/openmrs`
+if OpenMRS is local, not `http://host.docker.internal:...` (that hostname only
+resolves inside a Docker container). If you're switching between this and the
+Docker Compose flow above with OpenMRS on the same machine, you'll need to
+change this value each time.
 
 ## Running registered with OpenHIM core (no Docker)
 
