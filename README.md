@@ -13,9 +13,7 @@ orders and results between them as FHIR resources.
      via OpenHIM's "OpenMRS to Mediator Order Push" inbound channel.
    - **`poll`**: `src/lib/orderPoller.js` periodically searches OpenMRS's FHIR
      `ServiceRequest` endpoint for anything new since the last poll, then POSTs
-     each one to that same OpenHIM inbound channel — it no longer calls the
-     relay logic in-process, so this hop is logged (and retryable) as a real
-     OpenHIM transaction instead of being invisible.
+looks     each one to that same OpenHIM inbound channel.
 3. Either way, `routes/serviceRequest.js` hands off to `src/lib/orderRelay.js`,
    which resolves the OpenMRS `Patient` and, before touching the
    `ServiceRequest` at all, pushes/updates that `Patient` in AdvaPACS first

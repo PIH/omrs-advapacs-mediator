@@ -265,8 +265,8 @@ describe('orderRelay', () => {
     });
   });
 
-  describe('completed -> draft status override (hack)', () => {
-    test('overrides a completed status to draft', async () => {
+  describe('completed -> active status override (hack)', () => {
+    test('overrides a completed status to active', async () => {
       openmrs.getPatient.mockResolvedValue(patientWithEmrId);
       advapacs.upsertPatient.mockResolvedValue({ id: 'advapacs-patient-1' });
       advapacs.createServiceRequest.mockResolvedValue({ id: 'advapacs-sr-1' });
@@ -277,7 +277,7 @@ describe('orderRelay', () => {
       });
 
       const [outboundArg] = advapacs.createServiceRequest.mock.calls[0];
-      expect(outboundArg.status).toBe('draft');
+      expect(outboundArg.status).toBe('active');
     });
 
     test('leaves any other status unchanged', async () => {
@@ -374,8 +374,8 @@ describe('orderRelay', () => {
     });
   });
 
-  describe('stripping the system-less OpenMRS concept coding from the outbound ServiceRequest.code (debugging AdvaPACS bare 500)', () => {
-    test('removes the system-less coding entirely, keeping only system-bearing codings', async () => {
+  describe('stripping the system-less OpenMRS concept coding and wrapping ServiceRequest.code as a CodeableReference (AdvaPACS R5 requires code.concept, not a flat CodeableConcept)', () => {
+    test('wraps the stripped coding/text under code.concept, keeping only system-bearing codings', async () => {
       openmrs.getPatient.mockResolvedValue(patientWithEmrId);
       advapacs.upsertPatient.mockResolvedValue({ id: 'advapacs-patient-1' });
       advapacs.createServiceRequest.mockResolvedValue({ id: 'advapacs-sr-1' });
@@ -400,7 +400,7 @@ describe('orderRelay', () => {
       expect(outboundArg.code.concept.text).toBe('Forearm - Left (X-ray)');
     });
 
-    test('leaves code.coding unchanged when every coding already has a system', async () => {
+    test('leaves code.concept.coding unchanged (aside from the wrap) when every coding already has a system', async () => {
       openmrs.getPatient.mockResolvedValue(patientWithEmrId);
       advapacs.upsertPatient.mockResolvedValue({ id: 'advapacs-patient-1' });
       advapacs.createServiceRequest.mockResolvedValue({ id: 'advapacs-sr-1' });
@@ -418,7 +418,7 @@ describe('orderRelay', () => {
       expect(outboundArg.code.concept.coding).toEqual(coding);
     });
 
-    test('does not throw and sends code through unchanged when there is no code field at all', async () => {
+    test('does not throw and sends code through unchanged (undefined) when there is no code field at all', async () => {
       openmrs.getPatient.mockResolvedValue(patientWithEmrId);
       advapacs.upsertPatient.mockResolvedValue({ id: 'advapacs-patient-1' });
       advapacs.createServiceRequest.mockResolvedValue({ id: 'advapacs-sr-1' });
@@ -473,7 +473,7 @@ describe('orderRelay', () => {
   });
 
   describe('hardcoded modality on the outbound ServiceRequest (stopgap, UHM-9445)', () => {
-    test('adds a hardcoded CR (X-ray) modality to orderDetail', async () => {
+    test('adds a hardcoded CR (X-ray) modality parameter, identified by AdvaPACS\'s "modality" code with a valueString', async () => {
       openmrs.getPatient.mockResolvedValue(patientWithEmrId);
       advapacs.upsertPatient.mockResolvedValue({ id: 'advapacs-patient-1' });
       advapacs.createServiceRequest.mockResolvedValue({ id: 'advapacs-sr-1' });

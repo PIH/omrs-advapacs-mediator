@@ -68,8 +68,7 @@ async function relayServiceRequest(input) {
   // this OpenMRS FHIR2 module doesn't support a status search param on
   // ServiceRequest at all). Any other status currently (cancelled, on-hold, etc.) passes
   // through unchanged. We will need to build support for different status
-  // TODO: revert back to "active"?
-  const outboundStatus = serviceRequest.status === 'completed' ? 'draft' : serviceRequest.status;
+  const outboundStatus = serviceRequest.status === 'completed' ? 'active' : serviceRequest.status;
 
   // strip out the OpenMRS-specific and OpenMRS Reference fields we don't want to send to AdvaPACS
   const { encounter, requester, occurrencePeriod, id, meta, text, ...serviceRequestWithoutStrippedFields } = serviceRequest;
@@ -79,22 +78,18 @@ async function relayServiceRequest(input) {
     identifier: withAccessionNumber(serviceRequest.identifier),
     subject: outboundSubject,
     status: outboundStatus,
-    // See NOTES-code-concept-experiment.md for why `code` is wrapped this way.
+    // AdvaPACS's R5 endpoint models ServiceRequest.code as a CodeableReference,
+    // not R4's flat CodeableConcept -- wrap it under "concept".
     code: toCodeableReference(withoutSystemlessCoding(serviceRequest.code)),
     // AdvaPACS only accepts the occurrenceDateTime variant of this FHIR choice
     // type, not occurrencePeriod -- collapse to a single instant via .start
     // (OpenMRS only ever sends a point-in-time period, start === end).
     occurrenceDateTime: serviceRequest.occurrenceDateTime || (occurrencePeriod && occurrencePeriod.start),
-    // TODO(UHM-9445): hardcoded to X-ray (DICOM modality "CR") -- every order
-    // this integration currently handles is an X-ray. OpenMRS's ServiceRequest
+    // TODO(UHM-9445): hardcoded to X-ray (modality "CR") -- every order this
+    // integration currently handles is an X-ray. OpenMRS's ServiceRequest
     // carries no field indicating imaging modality today, so there's nothing
     // to derive this from yet. Replace with a real per-order-type modality
-    // mapping once that ticket is scoped. Shape is FHIR R5's ServiceRequest.
-    // orderDetail.parameter structure, keyed via AdvaPACS's own custom coding
-    // system -- see https://docs.advapacs.com/interfaces/fhir/r5/service-request.
-    // "DX" was tried in place of "CR" while debugging a persistent "missing
-    // modality" error that turned out unrelated to this value (see
-    // toCodeableReference below) -- switched back to "CR".
+    // mapping once that ticket is scoped.
     orderDetail: [{
       parameter: [{
         code: { coding: [{ system: ADVAPACS_ORDER_DETAIL_PARAMETER_CODE_SYSTEM, code: 'modality' }] },
@@ -165,19 +160,16 @@ function withPatientInternalIdentifierTypeCoding(identifier) {
 
 // OpenMRS's ServiceRequest.code includes its own system-less internal concept coding alongside the mapped
 // LOINC/SNOMED codings -- drop this and any other system-less codings.
-// TODO: once we get the full cycle working, see if we really need to drop this
+// TODO: do we really need this?
 function withoutSystemlessCoding(code) {
   if (!code || !Array.isArray(code.coding)) return code;
-
   return { ...code, coding: code.coding.filter((coding) => coding.system) };
 }
 
-// EXPERIMENT: FHIR R5 changed several ServiceRequest fields (including `code`)
-// from a plain CodeableConcept to a CodeableReference ({concept, reference}).
-// Wraps a CodeableConcept as a CodeableReference's `concept`, or passes
-// through unchanged (undefined stays undefined) when there's nothing to wrap.
+// AdvaPACS's R5 ServiceRequest.code is a CodeableReference ({ concept, reference }),
+// not R4's flat CodeableConcept -- wrap the CodeableConcept under "concept".
 function toCodeableReference(concept) {
-  return concept && { concept };
+  return concept ? { concept } : undefined;
 }
 
 function patientNameOf(patient) {
