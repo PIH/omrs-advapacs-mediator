@@ -240,6 +240,85 @@ network segment broader than this Docker stack's own.
   same container names/ports (`8081`, `9000`, `5000`-`5001`), so stop any
   other instance first.
 
+## Administering the server
+
+Once this is running somewhere other than your own laptop (e.g. a CI server),
+here's how to operate it day to day.
+
+**Status**: `docker compose ps`. Only `openhim-core` and `openhim-console`
+have a Docker `healthcheck:`, so those two show `(healthy)`/`(unhealthy)`;
+`openmrs-advapacs-mediator` and `mongo-db` will only ever show the plain
+container state (`running`, `exited`, ...) — don't wait for a "healthy"
+mediator, it doesn't report one.
+
+**Stopping — three different levels, not interchangeable**:
+- `docker compose stop` — stops all containers, keeps them and all data
+  intact. `docker compose start` resumes exactly where it left off.
+- `docker compose down` — removes the containers and network, but keeps the
+  `mongo-data` volume, so OpenHIM's registered channels/clients and its
+  transaction history survive a `docker compose up -d` afterward.
+- `docker compose down -v` — also deletes the `mongo-data` volume.
+  **Destructive** — resets OpenHIM back to a completely fresh, unregistered
+  state (this is how the admin-password self-heal behavior above was tested).
+  Only do this deliberately.
+
+**Picking up a code change**: a plain restart reuses the old image — you need
+to rebuild first:
+```bash
+docker compose build openmrs-advapacs-mediator
+docker compose up -d --force-recreate openmrs-advapacs-mediator
+```
+
+**Picking up a config change** (edited `mediatorConfig.json`, or changed an
+env var that affects channel/client setup, e.g. `ADVAPACS_BASE_URL` or
+`OPENHIM_INBOUND_CLIENT_*`): rerun the one-shot setup script —
+```bash
+docker compose run --rm openhim-setup
+```
+It idempotently upserts channels/clients and self-heals the admin password
+(see above) — safe to run any time, not just after a fresh volume.
+
+**Container logs** (each service's stdout/stderr — startup messages, this
+app's own request handling, etc.):
+```bash
+docker compose logs -f openmrs-advapacs-mediator   # follow one service
+docker compose logs --tail=50 openhim-core          # last 50 lines of another
+docker compose logs                                 # everything
+```
+The five services are `mongo-db`, `openhim-core`, `openhim-console`,
+`openmrs-advapacs-mediator`, and the one-shot `openhim-setup` (which has no
+fixed `container_name`, so `docker compose ps`/`logs` refer to it by a
+compose-generated name like `omrs-advapacs-mediator-openhim-setup-1`). The
+mediator's own lines are winston JSON (`{"level":...,"message":...,"timestamp":...}`),
+verbosity controlled by `.env`'s `LOG_LEVEL`.
+
+**OpenHIM's transaction log — a different thing from container logs.** This
+is the actual FHIR request/response history for every push through the two
+channels (what's been used all through this project's development to debug
+real order-push/AdvaPACS traffic) — persisted in Mongo, not visible via
+`docker compose logs` at all. Two ways to see it:
+- Console UI: `http://127.0.0.1:9000`, log in with `.env`'s
+  `OPENHIM_USERNAME`/`OPENHIM_PASSWORD`.
+- Admin API directly:
+  ```bash
+  curl -k -u "$OPENHIM_USERNAME:$OPENHIM_PASSWORD" \
+    'https://127.0.0.1:8081/transactions?filterLimit=10&filterPage=0'   # list
+  curl -k -u "$OPENHIM_USERNAME:$OPENHIM_PASSWORD" \
+    'https://127.0.0.1:8081/transactions/<id>'                          # one transaction's full bodies
+  ```
+  (`-k` skips certificate validation for OpenHIM's self-signed cert — the same
+  thing `OPENHIM_TRUST_SELF_SIGNED=true` does for the app itself.)
+
+**Reaching any of this on a remote server**: every admin-facing port (`8081`,
+`9000`, `5000`, `5001`) is deliberately bound to `127.0.0.1` only (see above),
+so none of it is reachable directly from your own machine once this runs
+somewhere other than localhost. Use an SSH tunnel instead:
+```bash
+ssh -L 8081:127.0.0.1:8081 -L 9000:127.0.0.1:9000 <user>@<server>
+```
+then browse/curl `127.0.0.1:8081` and `127.0.0.1:9000` on your own machine
+exactly as if you were on the server itself.
+
 ## Running locally without OpenHIM core
 
 ```bash
