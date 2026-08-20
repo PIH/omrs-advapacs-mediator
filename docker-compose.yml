@@ -25,21 +25,26 @@ services:
       - authentication_jwt_secretOrPublicKey=secret
       - authentication_jwt_algorithms=HS256
       - authentication_jwt_issuer=openhim
-      - openhimConsoleBaseUrl=http://localhost:9000
+      - openhimConsoleBaseUrl=http://localhost:${OPENHIM_CONSOLE_HOST_PORT:-9000}
     # Bound to loopback, not 0.0.0.0: this stack's only legitimate callers of
     # the router (5000/5001) are the mediator/openhim-setup containers, already
     # reachable via the shared `openhim` Docker network -- these host-published
     # copies exist only for local host-side debugging (curl/console access),
     # not for any real external caller. If push mode is ever used with OpenMRS
-    # on a different host, port 5000 (HTTPS -- not 5001, which is plain HTTP)
-    # should be the one re-published on a real interface, scoped/firewalled to
-    # that host, so the inbound channel's Basic Auth / X-Mediator-Secret
-    # credentials aren't sent in cleartext across that network. Keep 5001
-    # loopback-only even then.
+    # on a different host, the HTTPS port (default 5000, see
+    # OPENHIM_ROUTER_HTTPS_HOST_PORT below) should be the one re-published on
+    # a real interface, scoped/firewalled to that host, so the inbound
+    # channel's Basic Auth / X-Mediator-Secret credentials aren't sent in
+    # cleartext across that network -- not the HTTP port (default 5001). Keep
+    # the HTTP port loopback-only even then.
+    # Host-side port numbers are all overridable via .env (defaults shown) --
+    # this stack may run alongside other dockerized apps on a shared host, so
+    # any of these may need to move to avoid a collision. Only the host side
+    # changes; the container-internal ports (8080/5000/5001) stay fixed.
     ports:
-      - "127.0.0.1:8081:8080"
-      - "127.0.0.1:5000:5000"
-      - "127.0.0.1:5001:5001"
+      - "127.0.0.1:${OPENHIM_ADMIN_API_HOST_PORT:-8081}:8080"
+      - "127.0.0.1:${OPENHIM_ROUTER_HTTPS_HOST_PORT:-5000}:5000"
+      - "127.0.0.1:${OPENHIM_ROUTER_HTTP_HOST_PORT:-5001}:5001"
     networks:
       - openhim
     healthcheck:
@@ -57,11 +62,15 @@ services:
     image: jembi/openhim-console:latest
     restart: unless-stopped
     environment:
-      - OPENHIM_MEDIATOR_API_PORT=8081
+      # Tells the console UI (running in the operator's browser, not this
+      # container) which host port to reach the admin API on -- must track
+      # whatever OPENHIM_ADMIN_API_HOST_PORT actually publishes, not the
+      # container-internal 8080 a browser can't reach directly.
+      - OPENHIM_MEDIATOR_API_PORT=${OPENHIM_ADMIN_API_HOST_PORT:-8081}
     networks:
       - openhim
     ports:
-      - "127.0.0.1:9000:80"
+      - "127.0.0.1:${OPENHIM_CONSOLE_HOST_PORT:-9000}:80"
     healthcheck:
       test: "wget -qO- http://openhim-console || exit 1"
       interval: 30s

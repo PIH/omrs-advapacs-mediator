@@ -168,10 +168,12 @@ OpenMRS doesn't push events anywhere on its own. Pick one, set via
     to AdvaPACS itself fails (e.g. patient resolution, AdvaPACS validation).
   - **Port/scheme**: if OpenMRS and this mediator stack are on the same
     Docker network (or otherwise mutually trusted), plain HTTP on port `5001`
+    (default — see `OPENHIM_ROUTER_HTTP_HOST_PORT` in `.env` if overridden)
     is fine. If OpenMRS is on a different, less-trusted host, use HTTPS on
-    port `5000` instead — `5001` is plain HTTP and would send the credentials
-    above in cleartext across that network. See the Docker Compose section
-    below for what changes on this side to support that.
+    port `5000` (default — `OPENHIM_ROUTER_HTTPS_HOST_PORT`) instead — `5001`
+    is plain HTTP and would send the credentials above in cleartext across
+    that network. See the Docker Compose section below for what changes on
+    this side to support that.
 - **`poll`** (needs no OpenMRS-side change): `src/lib/orderPoller.js` already
   implements this — it calls
   `GET {OPENMRS_BASE_URL}/ws/fhir2/R4/ServiceRequest?_lastUpdated=gt...`
@@ -201,16 +203,27 @@ channel's `authType: "private"` requires (channels/clients aren't auto-created
 from mediator registration — that only happens if you explicitly run this
 script or import `mediatorConfig.json`'s `defaultChannelConfig` by hand).
 
-All four host-published ports above (`8081`, `9000`, `5000`, `5001`) are bound
-to `127.0.0.1` only, not `0.0.0.0` — reachable from this host (or an SSH
-tunnel) for debugging/console access, not from the LAN or internet. Nothing
-outside this Docker stack needs them in `poll` mode: both `orderPoller.js` and
-`advapacsClient.js` already reach OpenHIM over the internal `openhim` network.
-If `push` mode is used with OpenMRS on a different host, port `5000` (HTTPS —
-not `5001`, see below) should be the one re-published on a real interface,
-scoped/firewalled to that specific host. Keep `5001` loopback-only even then.
+**All four port numbers above are just defaults, overridable via `.env`**
+(`OPENHIM_ADMIN_API_HOST_PORT`, `OPENHIM_ROUTER_HTTPS_HOST_PORT`,
+`OPENHIM_ROUTER_HTTP_HOST_PORT`, `OPENHIM_CONSOLE_HOST_PORT`) — useful on a
+shared host running other dockerized apps, if one of these collides with a
+port something else already uses. Only the host-published side changes; this
+repo's own code always talks to OpenHIM over the internal Docker network
+(fixed hostnames/ports), never these. If you override one, also update
+`OPENHIM_API_URL`/`OPENHIM_ROUTER_URL`/`ADVAPACS_CHANNEL_URL` in `.env` to
+match — they're not auto-derived from these new vars.
 
-**Router traffic (`5001`) is plain HTTP, not HTTPS** — deliberately, not an
+All four host-published ports above (`8081`, `9000`, `5000`, `5001` by
+default) are bound to `127.0.0.1` only, not `0.0.0.0` — reachable from this
+host (or an SSH tunnel) for debugging/console access, not from the LAN or
+internet. Nothing outside this Docker stack needs them in `poll` mode: both
+`orderPoller.js` and `advapacsClient.js` already reach OpenHIM over the
+internal `openhim` network. If `push` mode is used with OpenMRS on a
+different host, the HTTPS port (default `5000` — not `5001`, see below)
+should be the one re-published on a real interface, scoped/firewalled to
+that specific host. Keep the HTTP port (`5001`) loopback-only even then.
+
+**Router traffic (`5001` by default) is plain HTTP, not HTTPS** — deliberately, not an
 oversight. This means the Basic Auth credentials `orderPoller.js` sends to the
 inbound channel travel as cleartext-equivalent base64, not encrypted. Accepted
 as-is since this traffic never leaves the Docker network or a loopback-bound
@@ -237,8 +250,8 @@ network segment broader than this Docker stack's own.
   No manual console step needed.
 - This is a separate, self-contained compose stack from any other
   standalone OpenHIM instance you may have running elsewhere — it uses the
-  same container names/ports (`8081`, `9000`, `5000`-`5001`), so stop any
-  other instance first.
+  same container names/ports (`8081`, `9000`, `5000`-`5001` by default), so
+  stop any other instance first, or override the port vars above instead.
 
 ## Administering the server
 
@@ -296,7 +309,9 @@ verbosity controlled by `.env`'s `LOG_LEVEL`.
 is the actual FHIR request/response history for every push through the two
 channels (what's been used all through this project's development to debug
 real order-push/AdvaPACS traffic) — persisted in Mongo, not visible via
-`docker compose logs` at all. Two ways to see it:
+`docker compose logs` at all. Two ways to see it (`8081`/`9000` are the
+defaults — substitute your own if you overrode
+`OPENHIM_ADMIN_API_HOST_PORT`/`OPENHIM_CONSOLE_HOST_PORT`):
 - Console UI: `http://127.0.0.1:9000`, log in with `.env`'s
   `OPENHIM_USERNAME`/`OPENHIM_PASSWORD`.
 - Admin API directly:
@@ -310,9 +325,10 @@ real order-push/AdvaPACS traffic) — persisted in Mongo, not visible via
   thing `OPENHIM_TRUST_SELF_SIGNED=true` does for the app itself.)
 
 **Reaching any of this on a remote server**: every admin-facing port (`8081`,
-`9000`, `5000`, `5001`) is deliberately bound to `127.0.0.1` only (see above),
-so none of it is reachable directly from your own machine once this runs
-somewhere other than localhost. Use an SSH tunnel instead:
+`9000`, `5000`, `5001` by default) is deliberately bound to `127.0.0.1` only
+(see above), so none of it is reachable directly from your own machine once
+this runs somewhere other than localhost. Use an SSH tunnel instead (adjust
+the port numbers if you overrode any of them):
 ```bash
 ssh -L 8081:127.0.0.1:8081 -L 9000:127.0.0.1:9000 <user>@<server>
 ```
