@@ -27,7 +27,7 @@
         }
       ],
       "allow": ["openmrs"],
-      "authType": "public",
+      "authType": "private",
       "methods": ["POST"],
       "type": "http"
     },

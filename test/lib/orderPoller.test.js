@@ -14,6 +14,9 @@ describe('orderPoller', () => {
     jest.useFakeTimers();
 
     process.env.OPENHIM_ROUTER_URL = 'http://openhim-core:5001';
+    process.env.OPENHIM_INBOUND_CLIENT_ID = 'openmrs';
+    process.env.OPENHIM_INBOUND_CLIENT_PASSWORD = 'test-client-password';
+    process.env.MEDIATOR_INBOUND_SECRET = 'test-inbound-secret';
 
     axios = require('axios');
     openmrs = require('../../src/lib/openmrsClient');
@@ -32,15 +35,25 @@ describe('orderPoller', () => {
 
     await orderPoller.pollOnce();
 
+    const expectedConfig = {
+      headers: {
+        'Content-Type': 'application/fhir+json',
+        'X-Mediator-Secret': 'test-inbound-secret'
+      },
+      auth: {
+        username: 'openmrs',
+        password: 'test-client-password'
+      }
+    };
     expect(axios.post).toHaveBeenCalledWith(
       'http://openhim-core:5001/fhir/ServiceRequest',
       sr1,
-      { headers: { 'Content-Type': 'application/fhir+json' } }
+      expectedConfig
     );
     expect(axios.post).toHaveBeenCalledWith(
       'http://openhim-core:5001/fhir/ServiceRequest',
       sr2,
-      { headers: { 'Content-Type': 'application/fhir+json' } }
+      expectedConfig
     );
     expect(axios.post).toHaveBeenCalledTimes(2);
   });

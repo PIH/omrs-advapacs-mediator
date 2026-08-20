@@ -33,7 +33,16 @@ async function pollOnce() {
         await axios.post(
           `${process.env.OPENHIM_ROUTER_URL}/fhir/ServiceRequest`,
           serviceRequest,
-          { headers: { 'Content-Type': 'application/fhir+json' } }
+          {
+            headers: {
+              'Content-Type': 'application/fhir+json',
+              'X-Mediator-Secret': process.env.MEDIATOR_INBOUND_SECRET
+            },
+            auth: {
+              username: process.env.OPENHIM_INBOUND_CLIENT_ID,
+              password: process.env.OPENHIM_INBOUND_CLIENT_PASSWORD
+            }
+          }
         );
       } catch (err) {
         logger.error('Failed to submit polled ServiceRequest to OpenHIM', {

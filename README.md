@@ -8,12 +8,12 @@ orders and results between them as FHIR resources.
 1. An order is created in OpenMRS (`ServiceRequest`).
 2. That order reaches this mediator one of two ways, controlled by
    `ORDER_INGESTION_MODE` (see `.env.example`):
-   - **`push`** (default): something on the OpenMRS side POSTs it (or its id)
+   - **`push`**: something on the OpenMRS side POSTs it (or its id)
      to `POST /fhir/ServiceRequest` on this mediator (`src/routes/serviceRequest.js`),
      via OpenHIM's "OpenMRS to Mediator Order Push" inbound channel.
-   - **`poll`**: `src/lib/orderPoller.js` periodically searches OpenMRS's FHIR
+   - **`poll`** (default): `src/lib/orderPoller.js` periodically searches OpenMRS's FHIR
      `ServiceRequest` endpoint for anything new since the last poll, then POSTs
-looks     each one to that same OpenHIM inbound channel.
+     each one to that same OpenHIM inbound channel.
 3. Either way, `routes/serviceRequest.js` hands off to `src/lib/orderRelay.js`,
    which resolves the OpenMRS `Patient` and, before touching the
    `ServiceRequest` at all, pushes/updates that `Patient` in AdvaPACS first
@@ -114,12 +114,26 @@ they need your actual data model, not boilerplate:
   confirmed complete. Check `orderRelay.js`'s inline comments (and recent
   git history) for the current state; remove this bullet once a full order
   round-trips successfully.
-- **Both order-push channels are `authType: "public"`** — no OpenHIM client/
-  RBAC is set up. That's fine for a trusted local dev network, but also
-  avoids a real conflict: layering OpenHIM's own client Basic-auth on the
-  outbound leg would collide with AdvaPACS's own `Authorization:
-  ID=...,Secret=...` header on the same request. A production deployment
-  would want real per-channel client credentials.
+- **The outbound AdvaPACS channel is `authType: "public"` — deliberately, not
+  an oversight.** The inbound channel (OpenMRS/poller → mediator) has real
+  OpenHIM Client auth (`authType: "private"`, an `openmrs` Client created by
+  `scripts/setupOpenhim.js`, `orderPoller.js` authenticating via Basic auth —
+  plus an independent app-level `X-Mediator-Secret` check in
+  `src/lib/sharedSecretAuth.js` as a backstop against direct access). The
+  outbound channel can't get the same treatment: confirmed directly in
+  `openhim-core-js`'s source, every non-mTLS OpenHIM client-auth mechanism
+  (Basic, Custom Token, JWT) rides on the same `Authorization` header that
+  this channel's `forwardAuthHeader: true` already reserves for passing
+  AdvaPACS's own `Authorization: ID=...,Secret=...` credentials through
+  unchanged — adding OpenHIM auth here would either break that pass-through or
+  never authenticate at all. Mutual TLS is the only OpenHIM-native way around
+  that conflict, but stands up real cert issuance/rotation for a channel whose
+  only caller is the mediator container itself on a private Docker network —
+  disproportionate here. The actual compensating control is network isolation
+  instead: `docker-compose.yml` binds OpenHIM's router/admin API/console ports
+  to `127.0.0.1` only (see below), so nothing outside this Docker stack can
+  reach this channel regardless of its `authType`. Revisit this reasoning if
+  this stack is ever deployed on a shared/multi-tenant Docker host.
 
 ## Step you still need to do on the OpenMRS side
 
@@ -128,7 +142,36 @@ OpenMRS doesn't push events anywhere on its own. Pick one, set via
 
 - **`push`** (needs an OpenMRS-side change): build an event listener module
   using OpenMRS's event/AOP hooks to POST newly created `ServiceRequest`s to
-  OpenHIM's inbound channel.
+  OpenHIM's inbound channel. Nothing on the mediator side needs to change to
+  support this — `POST /fhir/ServiceRequest` is already mounted and its auth
+  is already mode-agnostic (it's the same endpoint `orderPoller.js` posts to
+  for `poll` mode). The exact contract, so a module can be built against this
+  without reading the mediator's source:
+
+  - **Request**: `POST /fhir/ServiceRequest` on OpenHIM's router (see port/
+    scheme note below), `Content-Type: application/fhir+json`. Body is either
+    a full `ServiceRequest` FHIR resource, or the minimal
+    `{ "serviceRequestId": "<uuid>" }` form (`src/lib/orderRelay.js` fetches
+    the full resource from OpenMRS itself in that case).
+  - **Required headers** (that channel is `authType: "private"`, and the
+    mediator's own route checks a second, independent secret):
+    - `Authorization: Basic base64(OPENHIM_INBOUND_CLIENT_ID:OPENHIM_INBOUND_CLIENT_PASSWORD)`
+      — OpenHIM Client credentials, from `.env`.
+    - `X-Mediator-Secret: <MEDIATOR_INBOUND_SECRET>` — app-level backstop
+      independent of OpenHIM, also from `.env`.
+    - Both are the same values `orderPoller.js` already uses for the `poll`
+      path — see `src/lib/orderPoller.js`'s `pollOnce()` for a working
+      reference implementation of this exact contract.
+  - **Responses**: `200 { status: 'ok', advapacsServiceRequestId }` on
+    success; `401 { status: 'error', message: 'unauthorized' }` if either
+    header is missing/wrong; `502 { status: 'error', message }` if the relay
+    to AdvaPACS itself fails (e.g. patient resolution, AdvaPACS validation).
+  - **Port/scheme**: if OpenMRS and this mediator stack are on the same
+    Docker network (or otherwise mutually trusted), plain HTTP on port `5001`
+    is fine. If OpenMRS is on a different, less-trusted host, use HTTPS on
+    port `5000` instead — `5001` is plain HTTP and would send the credentials
+    above in cleartext across that network. See the Docker Compose section
+    below for what changes on this side to support that.
 - **`poll`** (needs no OpenMRS-side change): `src/lib/orderPoller.js` already
   implements this — it calls
   `GET {OPENMRS_BASE_URL}/ws/fhir2/R4/ServiceRequest?_lastUpdated=gt...`
@@ -153,9 +196,29 @@ Brings up four containers on one `openhim` network: `mongo-db`,
 `openhim-console` (`localhost:9000`), and this mediator
 (`openmrs-advapacs-mediator`, built from the repo's `Dockerfile`). A one-shot
 `openhim-setup` service runs `scripts/setupOpenhim.js` to idempotently create
-the two order-push channels (channels aren't auto-created from mediator
-registration — that only happens if you explicitly run this script or import
-`mediatorConfig.json`'s `defaultChannelConfig` by hand).
+the two order-push channels and the `openmrs` OpenHIM Client the inbound
+channel's `authType: "private"` requires (channels/clients aren't auto-created
+from mediator registration — that only happens if you explicitly run this
+script or import `mediatorConfig.json`'s `defaultChannelConfig` by hand).
+
+All four host-published ports above (`8081`, `9000`, `5000`, `5001`) are bound
+to `127.0.0.1` only, not `0.0.0.0` — reachable from this host (or an SSH
+tunnel) for debugging/console access, not from the LAN or internet. Nothing
+outside this Docker stack needs them in `poll` mode: both `orderPoller.js` and
+`advapacsClient.js` already reach OpenHIM over the internal `openhim` network.
+If `push` mode is used with OpenMRS on a different host, port `5000` (HTTPS —
+not `5001`, see below) should be the one re-published on a real interface,
+scoped/firewalled to that specific host. Keep `5001` loopback-only even then.
+
+**Router traffic (`5001`) is plain HTTP, not HTTPS** — deliberately, not an
+oversight. This means the Basic Auth credentials `orderPoller.js` sends to the
+inbound channel travel as cleartext-equivalent base64, not encrypted. Accepted
+as-is since this traffic never leaves the Docker network or a loopback-bound
+host port (see above) — only the admin API (`8081`) uses HTTPS today. OpenHIM
+core's router also listens on `5000` for HTTPS by default (same self-signed
+cert as the admin API, currently unused) — use that instead of `5001` the
+moment real router traffic (e.g. a `push`-mode OpenMRS module) crosses a
+network segment broader than this Docker stack's own.
 
 - `OPENMRS_BASE_URL` is read from `.env` here, same as elsewhere in the app —
   it's not hardcoded to any particular OpenMRS location. If OpenMRS runs on
@@ -167,9 +230,11 @@ registration — that only happens if you explicitly run this script or import
   `OPENMRS_BASE_URL` at its real address instead.
 - **First run on a fresh Mongo volume**: OpenHIM core auto-seeds a
   `root@openhim.org` user with its built-in default password
-  `openhim-password` — not whatever you may have set via the console on a
-  previous instance's (now-discarded) volume. Log into the console once to
-  change it if you want something else.
+  `openhim-password`, regardless of whatever's set in `.env`'s
+  `OPENHIM_PASSWORD`. `scripts/setupOpenhim.js` self-heals this automatically —
+  it tries `.env`'s credentials first, and if those don't work yet, falls back
+  to the known default, then rotates the account's password to match `.env`.
+  No manual console step needed.
 - This is a separate, self-contained compose stack from any other
   standalone OpenHIM instance you may have running elsewhere — it uses the
   same container names/ports (`8081`, `9000`, `5000`-`5001`), so stop any
@@ -230,7 +295,7 @@ testable seam without a refactor) or `subscriptionWebhook.js` — see
 
 ```
 mediatorConfig.json         OpenHIM mediator registration (endpoints, channels, config defs)
-scripts/setupOpenhim.js     Idempotently creates/updates the two order-push channels via OpenHIM's API
+scripts/setupOpenhim.js     Idempotently creates/updates the two order-push channels + the "openmrs" OpenHIM Client via OpenHIM's API; self-heals a fresh volume's default admin password to match .env
 Dockerfile                  Mediator's own container image
 docker-compose.yml          Full local stack: mongo, openhim-core, openhim-console, mediator, one-shot channel setup
 src/index.js                Registration + server bootstrap; always mounts the push endpoint, additionally starts the poller in 'poll' mode
@@ -238,6 +303,7 @@ src/lib/openmrsClient.js    OpenMRS FHIR2 client (read/search ServiceRequest/Pat
 src/lib/advapacsClient.js   Calls OpenHIM's outbound channel (ADVAPACS_CHANNEL_URL), not AdvaPACS directly; upsertPatient + createServiceRequest (+ ensureSubscription, currently unused -- see Known limitations)
 src/lib/orderRelay.js       Shared order-relay logic: upserts Patient first, then remaps ServiceRequest.subject to AdvaPACS's own Patient id and reshapes the rest of the ServiceRequest for AdvaPACS before pushing it
 src/lib/orderPoller.js      Poll-based ingestion (ORDER_INGESTION_MODE=poll) -- submits via OpenHIM's inbound channel
-src/routes/serviceRequest.js       Inbound channel's target; always mounted regardless of ingestion mode
+src/lib/sharedSecretAuth.js Shared-secret Express middleware factory (crypto.timingSafeEqual compare) -- backs the inbound X-Mediator-Secret check
+src/routes/serviceRequest.js       Inbound channel's target; always mounted regardless of ingestion mode; requires X-Mediator-Secret
 src/routes/subscriptionWebhook.js  PLACEHOLDER result webhook handler -- not yet functional/tested, currently disabled (see Known limitations)
 ```

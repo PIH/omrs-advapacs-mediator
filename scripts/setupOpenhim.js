@@ -1,6 +1,7 @@
 require('dotenv').config();
 const axios = require('axios');
 const https = require('https');
+const crypto = require('crypto');
 const mediatorConfig = require('../mediatorConfig.json');
 
 // Channels aren't auto-created when the mediator registers -- OpenHIM only
@@ -67,6 +68,83 @@ async function waitForOpenhim(retries = 30, delayMs = 2000) {
   }
 }
 
+// The inbound channel's authType: "private" (mediatorConfig.json) requires an
+// OpenHIM Client matching its "allow" list ("openmrs") to exist -- this is
+// what orderPoller.js authenticates as via Basic auth. Password is hashed
+// here (sha512(password + salt)) since OpenHIM's Clients API expects a
+// precomputed hash, not a plaintext password, unlike the Users API.
+// "allow" matches either a Client's clientID or its roles -- roles must stay
+// empty here since OpenHIM rejects a Client whose clientID duplicates one of
+// its own role names ("ClientID 'openmrs' cannot be the same as a role name"),
+// and clientID alone already satisfies the "openmrs" allow entry.
+function buildInboundClient() {
+  const salt = crypto.randomBytes(16).toString('hex');
+  const hash = crypto.createHash('sha512')
+    .update(process.env.OPENHIM_INBOUND_CLIENT_PASSWORD)
+    .update(salt)
+    .digest('hex');
+  return {
+    clientID: process.env.OPENHIM_INBOUND_CLIENT_ID || 'openmrs',
+    name: 'OpenMRS / order poller',
+    roles: [],
+    passwordAlgorithm: 'sha512',
+    passwordSalt: salt,
+    passwordHash: hash
+  };
+}
+
+async function upsertClient(clientDef) {
+  const { data: existing } = await api.get('/clients');
+  const match = existing.find((c) => c.clientID === clientDef.clientID);
+
+  if (match) {
+    await api.put(`/clients/${match._id}`, clientDef);
+    console.log(`Updated client "${clientDef.clientID}"`);
+  } else {
+    await api.post('/clients', clientDef);
+    console.log(`Created client "${clientDef.clientID}"`);
+  }
+}
+
+// A fresh OpenHIM Mongo volume always seeds root@openhim.org with this known
+// default, regardless of .env's OPENHIM_PASSWORD -- so a strong password set
+// in .env before first boot would otherwise break every subsequent script run
+// until someone manually fixes it via the console. Self-heals by rotating the
+// account to match .env the first time it detects the mismatch.
+const DEFAULT_ADMIN_PASSWORD = 'openhim-password';
+
+async function rotateDefaultAdminPassword() {
+  const email = process.env.OPENHIM_USERNAME;
+  const targetPassword = process.env.OPENHIM_PASSWORD;
+
+  if (!targetPassword) {
+    console.warn('OPENHIM_PASSWORD is not set -- skipping admin password rotation.');
+    return;
+  }
+
+  try {
+    await api.get('/users');
+    return; // .env credentials already work -- nothing to rotate.
+  } catch (err) {
+    if (!err.response || err.response.status !== 401) throw err;
+  }
+
+  // .env's credentials didn't work -- try the known fresh-volume default, and
+  // if that works, rotate the account's password to match .env. OpenHIM's
+  // Users API takes the plaintext password directly (hashed server-side) and
+  // expects the full user document back, not a sparse patch -- read first.
+  const defaultAuthApi = axios.create({
+    baseURL: process.env.OPENHIM_API_URL,
+    auth: { username: email, password: DEFAULT_ADMIN_PASSWORD },
+    httpsAgent: new https.Agent({ rejectUnauthorized: process.env.OPENHIM_TRUST_SELF_SIGNED !== 'true' })
+  });
+
+  const { data: existing } = await defaultAuthApi.get(`/users/${encodeURIComponent(email)}`);
+  const { _id, ...userData } = existing;
+  await defaultAuthApi.put(`/users/${encodeURIComponent(email)}`, { ...userData, password: targetPassword });
+  console.log(`Rotated OpenHIM admin password for ${email} to match .env`);
+}
+
 async function upsertChannel(channelDef) {
   // channelDef's autoRetryEnabled/autoRetryPeriodMinutes/autoRetryMaxAttempts
   // (set in mediatorConfig.json's defaultChannelConfig) only cover connection
@@ -90,6 +168,8 @@ async function upsertChannel(channelDef) {
 
 async function main() {
   await waitForOpenhim();
+  await rotateDefaultAdminPassword();
+  await upsertClient(buildInboundClient());
   const channels = mediatorConfig.defaultChannelConfig
     .filter((c) => CHANNEL_NAMES.includes(c.name))
     .map(withRealAdvapacsRoute);

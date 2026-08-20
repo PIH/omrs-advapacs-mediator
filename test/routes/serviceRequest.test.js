@@ -11,6 +11,7 @@ describe('POST /fhir/ServiceRequest', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    process.env.MEDIATOR_INBOUND_SECRET = 'test-inbound-secret';
     app = express();
     app.use(express.json({ type: ['application/json', 'application/fhir+json'] }));
     app.use(serviceRequestRoute);
@@ -24,6 +25,7 @@ describe('POST /fhir/ServiceRequest', () => {
 
     const response = await request(app)
       .post('/fhir/ServiceRequest')
+      .set('X-Mediator-Secret', 'test-inbound-secret')
       .send({ resourceType: 'ServiceRequest', id: 'sr1' });
 
     expect(response.status).toBe(200);
@@ -35,9 +37,19 @@ describe('POST /fhir/ServiceRequest', () => {
 
     const response = await request(app)
       .post('/fhir/ServiceRequest')
+      .set('X-Mediator-Secret', 'test-inbound-secret')
       .send({ resourceType: 'ServiceRequest', id: 'sr1' });
 
     expect(response.status).toBe(502);
     expect(response.body).toEqual({ status: 'error', message: 'AdvaPACS unreachable' });
+  });
+
+  test('responds 401 and never calls the relay when X-Mediator-Secret is missing or wrong', async () => {
+    const response = await request(app)
+      .post('/fhir/ServiceRequest')
+      .send({ resourceType: 'ServiceRequest', id: 'sr1' });
+
+    expect(response.status).toBe(401);
+    expect(orderRelay.relayServiceRequest).not.toHaveBeenCalled();
   });
 });
