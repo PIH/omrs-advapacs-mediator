@@ -106,14 +106,6 @@ they need your actual data model, not boilerplate:
   startup, and its channel/endpoint entries have been removed from
   `mediatorConfig.json`. Each disabled spot is marked with a matching
   comment — re-enable all three once this path is ready to test.
-- **End-to-end order creation against AdvaPACS's real sandbox is still being
-  worked through.** A sequence of `ServiceRequest` validation errors has
-  been fixed one at a time (subject reference shape, `encounter`/
-  `requester`, concept coding, occurrence type, accession-number coding,
-  imaging modality, ...) — as of this writing, that process isn't yet
-  confirmed complete. Check `orderRelay.js`'s inline comments (and recent
-  git history) for the current state; remove this bullet once a full order
-  round-trips successfully.
 - **The outbound AdvaPACS channel is `authType: "public"` — deliberately, not
   an oversight.** The inbound channel (OpenMRS/poller → mediator) has real
   OpenHIM Client auth (`authType: "private"`, an `openmrs` Client created by
@@ -132,8 +124,16 @@ they need your actual data model, not boilerplate:
   disproportionate here. The actual compensating control is network isolation
   instead: `docker-compose.yml` binds OpenHIM's router/admin API/console ports
   to `127.0.0.1` only (see below), so nothing outside this Docker stack can
-  reach this channel regardless of its `authType`. Revisit this reasoning if
-  this stack is ever deployed on a shared/multi-tenant Docker host.
+  reach this channel regardless of its `authType`. This holds even on a host
+  shared with other apps — a compromised *container* elsewhere doesn't grant
+  access to our loopback-bound ports or our `openhim` Docker network on its
+  own (each `docker compose` project gets its own isolated bridge network by
+  default). Revisit this reasoning only if this host's trust model changes —
+  e.g. it becomes genuinely multi-tenant with untrusted operators, or any
+  co-located app runs with `network_mode: host` or gets explicitly connected
+  to this stack's `openhim` network. A PIH-controlled shared host running
+  other PIH apps under normal Docker Compose isolation doesn't change this
+  calculus.
 
 ## Step you still need to do on the OpenMRS side
 
