@@ -36,4 +36,3 @@ jobs:
           push: true
           tags: |
             partnersinhealth/omrs-advapacs-mediator:latest
-            partnersinhealth/omrs-advapacs-mediator:${{ steps.vars.outputs.sha_short }}
